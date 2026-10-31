@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import Shared
 import SwiftUI
+import VLCKitSPM
 
 /// Full-screen live TV. Swipe up or down to change channel (like Up/Down on the TV remote),
 /// tap to show or hide the channel name and buttons. Leaving the app (or the Picture in Picture
@@ -26,7 +27,13 @@ struct LivePlayerView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            PlayerLayerView(player: model.player, onLayer: { pip.attach($0) }).ignoresSafeArea()
+            PlayerLayerView(player: model.player, onLayer: { layer in
+                model.layer = layer
+                pip.attach(layer)
+            }).ignoresSafeArea()
+            if model.usesVLC {
+                LiveVLCView(player: model.vlc).ignoresSafeArea()
+            }
 
             if model.isBuffering {
                 ProgressView().controlSize(.large).tint(.white)
@@ -85,7 +92,7 @@ struct LivePlayerView: View {
                 HStack {
                     CircleGlassButton(systemImage: "xmark", label: "Close", size: 44, fill: .black.opacity(0.35)) { dismiss() }
                     Spacer()
-                    if pip.isSupported {
+                    if pip.isSupported && !model.usesVLC {
                         CircleGlassButton(systemImage: pip.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
                                           size: 44, fill: .black.opacity(0.35)) { pip.toggle() }
                             .opacity(pip.isPossible ? 1 : 0.4)
@@ -171,6 +178,17 @@ final class LivePlayerModel {
     @ObservationIgnored private var observation: NSKeyValueObservation?
     @ObservationIgnored private var statusObservation: NSKeyValueObservation?
 
+    /// Some channels (often the 4K ones) send HEVC video that Apple's player can't show: you get
+    /// the sound over a black picture, and Picture in Picture never becomes possible. When the
+    /// picture hasn't appeared 3 s after the sound started, the channel switches to VLC, which
+    /// shows it (VLC has no Picture in Picture, so the button hides for that channel).
+    private(set) var usesVLC = false
+    @ObservationIgnored private(set) lazy var vlc = VLCMediaPlayer()
+    /// The full-screen player's video layer. Nil for the guide's muted preview, which never switches.
+    @ObservationIgnored weak var layer: AVPlayerLayer?
+    @ObservationIgnored private var videoCheck: Task<Void, Never>?
+    @ObservationIgnored private var currentURL: URL?
+
     /// [muted]: the iPad guide's preview.
     init(muted: Bool = false) {
         player.isMuted = muted
@@ -181,14 +199,22 @@ final class LivePlayerModel {
         observation = player.observe(\.timeControlStatus) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, !self.usesVLC else { return }
                 self.isBuffering = !playing && self.error == nil
+                if playing { self.checkVideo() }
             }
         }
     }
 
     func play(_ url: String, debounce: Bool) {
         pending?.cancel()
+        videoCheck?.cancel()
+        videoCheck = nil
+        currentURL = nil
+        if usesVLC {
+            vlc.stop()
+            usesVLC = false
+        }
         player.replaceCurrentItem(with: nil)
         error = nil
         isBuffering = true
@@ -201,6 +227,7 @@ final class LivePlayerModel {
                 error = "This channel's address can't be played."
                 return
             }
+            currentURL = parsed
             let item = AVPlayerItem(url: parsed)
             statusObservation = item.observe(\.status) { [weak self] item, _ in
                 guard item.status == .failed else { return }
@@ -216,8 +243,38 @@ final class LivePlayerModel {
 
     func stop() {
         pending?.cancel()
+        videoCheck?.cancel()
+        videoCheck = nil
+        if usesVLC {
+            vlc.stop()
+            usesVLC = false
+        }
         player.pause()
         player.replaceCurrentItem(with: nil)
+    }
+
+    /// Once per channel: 3 s after the sound starts, is there a picture?
+    private func checkVideo() {
+        guard videoCheck == nil, let layer, let url = currentURL else { return }
+        videoCheck = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled, self.currentURL == url,
+                  self.player.timeControlStatus == .playing, !layer.isReadyForDisplay else { return }
+            self.switchToVLC(url)
+        }
+    }
+
+    private func switchToVLC(_ url: URL) {
+        usesVLC = true
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        let media = VLCMedia(url: url)
+        // Live: a short buffer (ms) keeps it close to live while riding out small hiccups.
+        media.addOption(":network-caching=1500")
+        vlc.media = media
+        // `LiveVLCView` starts it once it has handed VLC its view (usesVLC above shows it).
+        isBuffering = false
+        error = nil
     }
 }
 
@@ -266,4 +323,19 @@ struct PlayerLayerView: UIViewRepresentable {
     func updateUIView(_ view: LayerView, context: Context) {
         view.playerLayer.player = player
     }
+}
+
+/// The view VLC draws a live channel into, when Apple's player can't show its picture.
+struct LiveVLCView: UIViewRepresentable {
+    let player: VLCMediaPlayer
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .black
+        player.drawable = view
+        player.play()
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {}
 }
