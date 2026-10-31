@@ -62,7 +62,7 @@ struct HomeView: View {
             }
             .scrollIndicators(.hidden)
             .refreshable { await store.refreshEverything(playlist) }
-            .background(AmbientBackground(tint: hero.map { NameTile.colour(for: $0.title) } ?? LumenColors.ambientCool))
+            .ambientBackground(tint: hero.map { NameTile.colour(for: $0.title) } ?? LumenColors.ambientCool)
             .sheet(isPresented: $editingFavourites) { FavouritesEditView(playlist: playlist) }
         }
     }

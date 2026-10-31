@@ -48,7 +48,7 @@ struct GuideView: View {
                 StatusMessage(text: "Loading channels…", loading: true)
             }
         }
-        .background(AmbientBackground(tint: tint))
+        .ambientBackground(tint: tint)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .navigationTitle(wide ? "TV guide" : "")

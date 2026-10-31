@@ -45,28 +45,53 @@ enum LumenFont {
 
 /// The dark background with two big soft glows (cool top left, warm bottom right), so screens
 /// aren't flat black. Same idea as `Ambient` in the TV app.
+///
+/// The glows are placed relative to the whole screen, not to this view: on the iPad the root
+/// draws one behind the top pill and each page draws its own below it, and both must give the
+/// same colour at the same spot, or a hard line shows under the pill (Hayat's iPad, 2026-10-31).
+/// The page's tint reaches the root through `.ambientTint(_:)`.
 struct AmbientBackground: View {
     var tint: Color = LumenColors.ambientCool
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
+            let frame = geo.frame(in: .global)
+            let screen = UIScreen.main.bounds.size
+            let w = max(frame.width, 1), h = max(frame.height, 1)
+            // A point given as a fraction of the screen, turned into this view's unit space.
+            let at = { (x: CGFloat, y: CGFloat) in
+                UnitPoint(x: (screen.width * x - frame.minX) / w, y: (screen.height * y - frame.minY) / h)
+            }
             ZStack {
                 LumenColors.background
                 RadialGradient(
                     colors: [tint.opacity(0.55), tint.opacity(0.18), .clear],
-                    center: UnitPoint(x: 0.15, y: 0),
-                    startRadius: 0, endRadius: max(w, 400) * 0.8
+                    center: at(0.15, 0),
+                    startRadius: 0, endRadius: max(screen.width, 400) * 0.8
                 )
                 RadialGradient(
                     colors: [LumenColors.ambientWarm.opacity(0.40), LumenColors.ambientWarm.opacity(0.12), .clear],
-                    center: UnitPoint(x: 0.9, y: 1),
-                    startRadius: 0, endRadius: max(w, 400) * 0.7
+                    center: at(0.9, 1),
+                    startRadius: 0, endRadius: max(screen.width, 400) * 0.7
                 )
             }
         }
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.7), value: tint)
+    }
+}
+
+/// The glow colour the open page uses (Home and the guide follow the focused channel), so the
+/// root's background behind the iPad's top pill can match it.
+struct AmbientTintKey: PreferenceKey {
+    static let defaultValue: Color? = nil
+    static func reduce(value: inout Color?, nextValue: () -> Color?) { value = nextValue() ?? value }
+}
+
+extension View {
+    /// Draws the ambient background with [tint] and tells the root about it.
+    func ambientBackground(tint: Color) -> some View {
+        background(AmbientBackground(tint: tint)).preference(key: AmbientTintKey.self, value: tint)
     }
 }
 

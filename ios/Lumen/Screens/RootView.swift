@@ -14,6 +14,8 @@ struct RootView: View {
     @State private var searching = false
     /// A full-screen page in the open tab (the iPhone TV guide) asked for the bar to go.
     @State private var barHidden = false
+    /// The open page's glow colour (`.ambientBackground(tint:)`), used behind the iPad's pill.
+    @State private var ambientTint: Color?
 
     private var wide: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular }
 
@@ -34,13 +36,15 @@ struct RootView: View {
                             .accessibilityHidden(tab != item)
                             // Only the open tab may hide the bar.
                             .transformPreference(TabBarHiddenKey.self) { if tab != item { $0 = false } }
+                            .transformPreference(AmbientTintKey.self) { if tab != item { $0 = nil } }
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(AmbientBackground())
+        .background(AmbientBackground(tint: ambientTint ?? LumenColors.ambientCool))
         .onPreferenceChange(TabBarHiddenKey.self) { barHidden = $0 }
+        .onPreferenceChange(AmbientTintKey.self) { ambientTint = $0 }
         // iPhone: the floating bar; safeAreaInset makes scroll views inside every tab end above it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !wide, !barHidden {
