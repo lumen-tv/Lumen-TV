@@ -14,6 +14,8 @@ struct RootView: View {
     @State private var searching = false
     /// A full-screen page in the open tab (the iPhone TV guide) asked for the bar to go.
     @State private var barHidden = false
+    /// Where the pages start (below the status bar and, on iPad, the top pill).
+    @State private var pageTop: CGFloat = 0
     /// The glow colour each tab's top page shows, painted behind the iPad's pill so it meets the
     /// page without a line.
     @State private var tints = AmbientTints()
@@ -27,6 +29,8 @@ struct RootView: View {
         VStack(spacing: 0) {
             if wide {
                 TopTabBar(tab: tab, select: select, search: { searching = true })
+                    // Drawn over the page, so a film's backdrop can reach up behind it.
+                    .zIndex(1)
             }
             ZStack {
                 ForEach(AppTab.allCases) { item in
@@ -42,6 +46,8 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { pageTop = $0 }
+            .environment(\.pageTopInset, wide ? pageTop : 0)
         }
         .background(AmbientBackground(tint: tints.tint(for: tab.rawValue) ?? LumenColors.ambientCool))
         .environment(\.ambientTints, tints)

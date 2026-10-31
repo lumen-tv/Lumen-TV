@@ -260,6 +260,9 @@ extension EnvironmentValues {
     /// True on a full-width iPad window: the TV-like layout (top pill, wider grids). False on
     /// iPhone and in narrow iPad split-screen windows, which get the one-column phone layout.
     @Entry var lumenWide = false
+    /// iPad: how far the page starts below the top of the screen (status bar + the top pill), so
+    /// a film's backdrop can reach up behind the pill.
+    @Entry var pageTopInset: CGFloat = 0
     /// Opens the search screen (films, series and channels) from any tab.
     @Entry var openSearch: () -> Void = {}
     /// Set by the root: where pages report their glow colour (see `AmbientTints`).

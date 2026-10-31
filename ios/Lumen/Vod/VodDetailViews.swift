@@ -89,44 +89,65 @@ func nextUpPlayback(_ series: Series, store: PlaylistStore, playlist: Playlist) 
     return episodePlayback(series, pick.episode, from: pick.resume, episodes: info.episodes, tmdbId: info.tmdbId)
 }
 
-/// The big backdrop at the top of the tabs and the film and series pages, fading into the
-/// background at the bottom (and on iPad also to the left, behind the text, as on the TV).
-struct Backdrop: View {
+/// The film or series picture behind the whole page, as on the TV: it stays put while the text
+/// scrolls over it, and fades out into the page through a mask, so it meets the page's own colour
+/// without a band (a fade to a fixed colour left hard edges: Hayat's iPad screenshot 2026-10-31).
+/// iPad: the full screen, under the top pill too, darker on the left behind the text.
+/// iPhone: the top part of the screen.
+struct PageBackdrop: View {
     let url: String?
-    var height: CGFloat = 400
-    var wide = false
+    @Environment(\.lumenWide) private var wide
+    @Environment(\.pageTopInset) private var top
 
     var body: some View {
-        // The picture goes in an overlay of a fixed-size frame: a scaledToFill image laid out
-        // directly would make the whole page as wide as the picture (SwiftUI sizes a ZStack to
-        // its biggest child, unlike a UIImageView with clipsToBounds).
-        Color.clear
-            .frame(maxWidth: .infinity)
-            .frame(height: height)
-            .overlay {
-                if let url, let parsed = URL(string: url) {
-                    AsyncImage(url: parsed) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill().transition(.opacity)
+        GeometryReader { geo in
+            let height = wide ? geo.size.height : min(geo.size.height * 0.62, geo.size.width * 1.15)
+            // The picture goes in an overlay of a fixed-size frame: a scaledToFill image laid out
+            // directly would make the whole page as wide as the picture (SwiftUI sizes a ZStack to
+            // its biggest child, unlike a UIImageView with clipsToBounds).
+            Color.clear
+                .frame(width: geo.size.width, height: height)
+                .overlay {
+                    if let url, let parsed = URL(string: url) {
+                        AsyncImage(url: parsed) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill().transition(.opacity)
+                            }
                         }
                     }
                 }
-            }
-            .overlay {
-                LinearGradient(
-                    stops: [.init(color: .clear, location: 0.35), .init(color: LumenColors.background, location: 1)],
-                    startPoint: .top, endPoint: .bottom
-                )
-            }
-            .overlay {
-                if wide {
+                .overlay {
+                    if wide {
+                        LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .leading, endPoint: UnitPoint(x: 0.7, y: 0.5))
+                    }
+                }
+                .overlay {
                     LinearGradient(
-                        colors: [LumenColors.background.opacity(0.85), .clear],
-                        startPoint: .leading, endPoint: UnitPoint(x: 0.6, y: 0.5)
+                        stops: [.init(color: .clear, location: 0.4), .init(color: .black.opacity(0.45), location: 1)],
+                        startPoint: .top, endPoint: .bottom
                     )
                 }
-            }
-            .clipped()
+                .clipped()
+                .mask {
+                    LinearGradient(
+                        stops: [.init(color: .black, location: wide ? 0.6 : 0.5), .init(color: .clear, location: 1)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                }
+        }
+        // iPad: reach up behind the top pill and clock (RootView draws the pill above the page).
+        .padding(.top, wide ? -top : 0)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// The empty space at the top of a film or series page, where the picture shows through.
+private struct BackdropSpace: View {
+    @Environment(\.lumenWide) private var wide
+
+    var body: some View {
+        Color.clear.containerRelativeFrame(.vertical) { height, _ in height * (wide ? 0.4 : 0.38) }
     }
 }
 
@@ -149,7 +170,7 @@ struct RatingsRow: View {
     }
 }
 
-/// The text block under the backdrop, pulled up over its faded bottom.
+/// The text block over the lower part of the backdrop.
 private struct DetailBody<Content: View>: View {
     @Environment(\.lumenWide) private var wide
     @ViewBuilder let content: () -> Content
@@ -158,7 +179,6 @@ private struct DetailBody<Content: View>: View {
         VStack(alignment: .leading, spacing: 16, content: content)
             .frame(maxWidth: wide ? 760 : .infinity, alignment: .leading)
             .lumenGutter(wide)
-            .padding(.top, wide ? -140 : -96)
     }
 }
 
@@ -209,7 +229,7 @@ struct MovieDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Backdrop(url: info?.backdropUrl ?? movie.posterUrl, height: wide ? 560 : 420, wide: wide)
+                BackdropSpace()
                 DetailBody {
                     DetailTitle(title: movie.title, quality: movie.quality, facts: facts)
                     buttons
@@ -229,6 +249,7 @@ struct MovieDetailView: View {
             .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
+        .background { PageBackdrop(url: info?.backdropUrl ?? movie.posterUrl) }
         .detailPageChrome()
         .task { info = try? await store.movieInfo(movie, in: playlist) }
         .task { omdb = await Omdb.shared.ratings(title: movie.title, year: movie.year?.intValue, series: false) }
@@ -299,7 +320,7 @@ struct SeriesDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Backdrop(url: series.backdropUrl ?? series.posterUrl, height: wide ? 560 : 420, wide: wide)
+                BackdropSpace()
                 DetailBody {
                     DetailTitle(title: series.title, quality: nil, facts: facts)
                     HStack(spacing: 12) {
@@ -327,6 +348,7 @@ struct SeriesDetailView: View {
             .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
+        .background { PageBackdrop(url: series.backdropUrl ?? series.posterUrl) }
         .detailPageChrome()
         .task { omdb = await Omdb.shared.ratings(title: series.title, year: series.year?.intValue, series: true) }
         .task {
