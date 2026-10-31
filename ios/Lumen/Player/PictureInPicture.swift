@@ -13,9 +13,19 @@ final class PictureInPicture: NSObject {
     @ObservationIgnored private var controller: AVPictureInPictureController?
     @ObservationIgnored private var possible: NSKeyValueObservation?
 
+    /// True on every iPhone and iPad that can do Picture in Picture at all. The button shows
+    /// whenever this is true (dimmed until the stream is ready), so it never just vanishes.
+    let isSupported = AVPictureInPictureController.isPictureInPictureSupported()
+
+    /// Called once the video layer is on screen (in a window). Building the controller earlier,
+    /// before the layer was in a window, left it stuck at "not possible" on the iPad, so neither
+    /// the button nor the automatic start on leaving the app worked there.
     func attach(_ layer: AVPlayerLayer) {
-        guard controller == nil, AVPictureInPictureController.isPictureInPictureSupported(),
-              let controller = AVPictureInPictureController(playerLayer: layer) else { return }
+        guard isSupported else { return }
+        if let controller, controller.contentSource?.playerLayer === layer { return }
+        controller?.delegate = nil
+        possible = nil
+        let controller = AVPictureInPictureController(contentSource: .init(playerLayer: layer))
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.delegate = self
         possible = controller.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] controller, _ in
