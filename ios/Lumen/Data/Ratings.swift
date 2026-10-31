@@ -10,6 +10,8 @@ struct OmdbRatings {
     var age: String?
     /// How many people rated it on IMDb.
     var imdbVotes: Int?
+    /// "tt0903747"; also used to look up intro times.
+    var imdbId: String? = nil
 
     var isEmpty: Bool { imdb == nil && rottenTomatoes == nil && age == nil }
 }
@@ -85,7 +87,8 @@ final class Omdb {
         let tomatoes = sources.first { $0["Source"] as? String == "Rotten Tomatoes" }.flatMap { clean($0["Value"]) }
         let age = clean(json["Rated"]).flatMap { $0 == "Not Rated" || $0 == "Unrated" ? nil : $0 }
         let votes = clean(json["imdbVotes"]).flatMap { Int($0.filter(\.isNumber)) } // "32,756"
-        return OmdbRatings(imdb: clean(json["imdbRating"]), rottenTomatoes: tomatoes, age: age, imdbVotes: votes)
+        return OmdbRatings(imdb: clean(json["imdbRating"]), rottenTomatoes: tomatoes, age: age, imdbVotes: votes,
+                           imdbId: clean(json["imdbID"]).flatMap { $0.hasPrefix("tt") ? $0 : nil })
     }
 }
 

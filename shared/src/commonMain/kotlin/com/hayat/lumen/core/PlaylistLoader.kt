@@ -173,6 +173,8 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
             episodes = sorted,
             cast = info?.get("cast").lenient().nonBlank(),
             director = info?.get("director").lenient().nonBlank(),
+            tmdbId = (info?.get("tmdb").lenient() ?: info?.get("tmdb_id").lenient())?.trim()
+                ?.takeIf { it.isNotEmpty() && it != "0" && it.all(Char::isDigit) },
         )
     }
 

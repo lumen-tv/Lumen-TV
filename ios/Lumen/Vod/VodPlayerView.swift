@@ -4,6 +4,8 @@ import VLCKitSPM
 /// Full-screen film/episode player. It uses VLC (VLCKit) rather than Apple's player because
 /// most films from Xtream providers are .mkv, often with DTS/AC3 audio, which AVPlayer can't open.
 /// Tap shows the controls; double-tap the left/right side skips 10 s back/forward.
+/// In a series, "Skip intro" / "Skip recap" shows while that part plays and "Next episode" in the
+/// end credits, from the intro databases (`SkipTimes`); nothing shows when they don't know the episode.
 struct VodPlayerView: View {
     let playback: VodPlayback
     let playlist: Playlist
@@ -15,6 +17,9 @@ struct VodPlayerView: View {
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
     @State private var scrubbing: Double?
+    @State private var skips: [SkipSegment] = []
+    /// The segment whose pill was swiped away, so it stays away.
+    @State private var skipDismissed: Double?
 
     init(playback: VodPlayback, playlist: Playlist) {
         self.playback = playback
@@ -49,7 +54,16 @@ struct VodPlayerView: View {
                     .glass(fill: .black.opacity(0.6))
             }
             if controlsVisible { controls.transition(.opacity) }
+            if let offer = skipOffer {
+                skipButton(offer)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 24)
+                    // Above the bottom panel when the controls are up.
+                    .padding(.bottom, controlsVisible ? 150 : 32)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.18), value: skipOffer)
         .statusBarHidden(!controlsVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
@@ -72,14 +86,14 @@ struct VodPlayerView: View {
         .onChange(of: model.ended) { _, ended in
             guard ended else { return }
             saveProgress(finished: true)
-            if let next = queue.first {
-                queue.removeFirst()
-                current = next
-                model.start(next.streamUrl, at: 0)
-                showControls()
-            } else {
-                dismiss()
-            }
+            if queue.isEmpty { dismiss() } else { playNext() }
+        }
+        // Where this episode's intro, recap and credits are; playback doesn't wait for it.
+        .task(id: current.id) {
+            skips = []
+            skipDismissed = nil
+            guard let ref = current.skipRef else { return }
+            skips = await SkipTimes.shared.segments(for: ref)
         }
     }
 
@@ -136,12 +150,10 @@ struct VodPlayerView: View {
                 }
                 .font(LumenFont.caption)
                 .foregroundStyle(LumenColors.textSecondary)
-                if let next = queue.first {
+                if !queue.isEmpty {
                     Button {
                         saveProgress()
-                        queue.removeFirst()
-                        current = next
-                        model.start(next.streamUrl, at: 0)
+                        playNext()
                     } label: {
                         Label("Next episode", systemImage: "forward.end.fill")
                     }
@@ -153,6 +165,42 @@ struct VodPlayerView: View {
             .glass(fill: .black.opacity(0.5))
             .padding(16)
         }
+    }
+
+    private var skipOffer: SkipOffer? {
+        guard !model.failed, scrubbing == nil,
+              let offer = SkipPick.at(skips, position: model.position, duration: model.duration, hasNext: !queue.isEmpty),
+              offer.segmentStart != skipDismissed else { return nil }
+        return offer
+    }
+
+    /// White pill like the TV's. Tap skips; swipe it away to hide it.
+    private func skipButton(_ offer: SkipOffer) -> some View {
+        Button {
+            if let target = offer.target {
+                model.seek(to: target)
+            } else {
+                saveProgress(finished: true) // the credits count as watched
+                playNext()
+            }
+        } label: {
+            Label(offer.label, systemImage: "forward.end.fill")
+                .font(LumenFont.body.weight(.semibold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(.white))
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(DragGesture(minimumDistance: 20).onEnded { _ in skipDismissed = offer.segmentStart })
+    }
+
+    private func playNext() {
+        guard let next = queue.first else { return }
+        queue.removeFirst()
+        current = next
+        model.start(next.streamUrl, at: 0)
+        showControls()
     }
 
     private func saveProgress(finished: Bool = false) {

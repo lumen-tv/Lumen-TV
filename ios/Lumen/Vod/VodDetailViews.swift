@@ -11,6 +11,8 @@ struct VodPlayback: Identifiable {
     let progress: WatchProgress
     /// For a series: the episodes after this one, for "Next episode".
     var upNext: [VodPlayback] = []
+    /// For a series episode: what to look up for Skip intro.
+    var skipRef: SkipRef? = nil
 }
 
 func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodPlayback {
@@ -27,7 +29,7 @@ func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodP
 }
 
 /// An episode's playback, with the next 20 episodes queued for "Next episode".
-func episodePlayback(_ series: Series, _ episode: Episode, from start: Double, episodes: [Episode]?) -> VodPlayback {
+func episodePlayback(_ series: Series, _ episode: Episode, from start: Double, episodes: [Episode]?, tmdbId: String? = nil) -> VodPlayback {
     let title = "\(series.title) · S\(episode.season) E\(episode.episode)"
     var playback = VodPlayback(
         streamUrl: episode.streamUrl,
@@ -39,8 +41,12 @@ func episodePlayback(_ series: Series, _ episode: Episode, from start: Double, e
             duration: episode.durationSecs?.doubleValue ?? 0, updated: .now
         )
     )
+    playback.skipRef = SkipRef(
+        seriesTitle: series.title, year: series.year?.intValue, tmdbId: tmdbId,
+        season: Int(episode.season), episode: Int(episode.episode), durationSecs: episode.durationSecs?.intValue
+    )
     if let episodes, let index = episodes.firstIndex(of: episode) {
-        playback.upNext = episodes.dropFirst(index + 1).prefix(20).map { episodePlayback(series, $0, from: 0, episodes: nil) }
+        playback.upNext = episodes.dropFirst(index + 1).prefix(20).map { episodePlayback(series, $0, from: 0, episodes: nil, tmdbId: tmdbId) }
     }
     return playback
 }
@@ -80,7 +86,7 @@ func nextUpPlayback(_ series: Series, store: PlaylistStore, playlist: Playlist) 
     guard let info = try? await store.seriesInfo(series, in: playlist),
           let pick = NextUp.pick(info.episodes, progress: { store.progress(WatchProgress.episodeKey($0.id), in: playlist) })
     else { return nil }
-    return episodePlayback(series, pick.episode, from: pick.resume, episodes: info.episodes)
+    return episodePlayback(series, pick.episode, from: pick.resume, episodes: info.episodes, tmdbId: info.tmdbId)
 }
 
 /// The big backdrop at the top of the tabs and the film and series pages, fading into the
@@ -385,7 +391,7 @@ struct SeriesDetailView: View {
     }
 
     private func play(_ episode: Episode, from start: Double) {
-        playback = episodePlayback(series, episode, from: start, episodes: info?.episodes)
+        playback = episodePlayback(series, episode, from: start, episodes: info?.episodes, tmdbId: info?.tmdbId)
     }
 }
 

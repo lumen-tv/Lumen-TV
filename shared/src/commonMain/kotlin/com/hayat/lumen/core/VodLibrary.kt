@@ -74,6 +74,8 @@ class SeriesInfo(
     val episodes: List<Episode>,
     val cast: String?,
     val director: String?,
+    /** The show's TMDB id (`info.tmdb`), used to look up intro times. */
+    val tmdbId: String? = null,
 )
 
 class Episode(
