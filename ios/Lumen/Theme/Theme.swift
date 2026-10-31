@@ -49,9 +49,12 @@ enum LumenFont {
 /// The glows are placed relative to the whole screen, not to this view: on the iPad the root
 /// draws one behind the top pill and each page draws its own below it, and both must give the
 /// same colour at the same spot, or a hard line shows under the pill (Hayat's iPad, 2026-10-31).
-/// The page's tint reaches the root through `.ambientTint(_:)`.
+/// Each page's tint reaches the root through `AmbientTints`.
 struct AmbientBackground: View {
     var tint: Color = LumenColors.ambientCool
+    @Environment(\.ambientTints) private var tints
+    @Environment(\.ambientTab) private var tab
+    @State private var id = UUID()
 
     var body: some View {
         GeometryReader { geo in
@@ -78,20 +81,43 @@ struct AmbientBackground: View {
         }
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.7), value: tint)
+        // Pages inside a tab tell the root which colour they show (the root's own background
+        // and sheets have no `ambientTab`, so they don't count).
+        .onAppear { if let tab { tints?.show(id, tab: tab, tint: tint) } }
+        .onChange(of: tint) { tints?.change(id, tint: tint) }
+        .onDisappear { tints?.hide(id) }
     }
 }
 
-/// The glow colour the open page uses (Home and the guide follow the focused channel), so the
-/// root's background behind the iPad's top pill can match it.
-struct AmbientTintKey: PreferenceKey {
-    static let defaultValue: Color? = nil
-    static func reduce(value: inout Color?, nextValue: () -> Color?) { value = nextValue() ?? value }
+/// Which glow colour each tab is showing right now, so the root can paint the same colour behind
+/// the iPad's top pill. Every `AmbientBackground` on screen in a tab registers here; the one that
+/// appeared last wins, which is the page on top of that tab's NavigationStack (a page pushed over
+/// another makes the one below disappear, and it registers again when it comes back).
+/// Unlike a PreferenceKey this follows pushes: Home's purple no longer stuck under All channels.
+@Observable
+final class AmbientTints {
+    private struct Entry { let tab: String; var tint: Color; let order: Int }
+    private var entries: [UUID: Entry] = [:]
+    private var counter = 0
+
+    func show(_ id: UUID, tab: String, tint: Color) {
+        counter += 1
+        entries[id] = Entry(tab: tab, tint: tint, order: counter)
+    }
+
+    func change(_ id: UUID, tint: Color) { entries[id]?.tint = tint }
+
+    func hide(_ id: UUID) { entries[id] = nil }
+
+    func tint(for tab: String) -> Color? {
+        entries.values.filter { $0.tab == tab }.max { $0.order < $1.order }?.tint
+    }
 }
 
 extension View {
-    /// Draws the ambient background with [tint] and tells the root about it.
+    /// The ambient background with a channel's colour (Home, the guide).
     func ambientBackground(tint: Color) -> some View {
-        background(AmbientBackground(tint: tint)).preference(key: AmbientTintKey.self, value: tint)
+        background(AmbientBackground(tint: tint))
     }
 }
 
@@ -236,6 +262,10 @@ extension EnvironmentValues {
     @Entry var lumenWide = false
     /// Opens the search screen (films, series and channels) from any tab.
     @Entry var openSearch: () -> Void = {}
+    /// Set by the root: where pages report their glow colour (see `AmbientTints`).
+    @Entry var ambientTints: AmbientTints? = nil
+    /// Set by the root on each tab's screen: which tab a page belongs to.
+    @Entry var ambientTab: String? = nil
 }
 
 /// Side padding: 20 on iPhone, 48 on iPad (the TV's safe area is 48 too).
