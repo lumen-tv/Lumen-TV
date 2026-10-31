@@ -11,7 +11,12 @@ struct RootView: View {
     /// Tabs opened so far. Each stays alive once opened (hidden, not removed), so switching back
     /// keeps its scroll position and pushed pages, as a real tab bar does.
     @State private var opened: Set<AppTab> = [.live]
+    /// The bar is in search mode: it has turned into a search field and the results cover the
+    /// open tab (no separate search page, Hayat 2026-10-31).
     @State private var searching = false
+    @State private var query = ""
+    /// Film and series pages opened from the results.
+    @State private var searchPath = NavigationPath()
     /// A full-screen page in the open tab (the iPhone TV guide) asked for the bar to go.
     @State private var barHidden = false
     /// iPad: a pushed page is showing, so the floating pill steps aside for its back button.
@@ -43,11 +48,16 @@ struct RootView: View {
                             .environment(\.ambientTab, item.rawValue)
                     }
                 }
+                if searching {
+                    SearchView(query: query, path: $searchPath)
+                        .transition(.opacity)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.topBarSpace, wide ? topBarHeight : 0)
             if wide, !topBarHidden {
-                TopTabBar(tab: tab, select: select, search: { searching = true })
+                TopTabBar(tab: tab, select: select, searching: searching, query: $query,
+                          search: startSearch, cancel: endSearch)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBarHeight = $0 }
                     .transition(.opacity)
             }
@@ -61,25 +71,38 @@ struct RootView: View {
         .animation(.easeOut(duration: 0.2), value: topBarHidden)
         // iPhone: the floating bar; safeAreaInset makes scroll views inside every tab end above it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !wide, !barHidden {
-                BottomTabBar(tab: tab, select: select, search: { searching = true })
+            // A film opened from the results has the whole screen, with its back button.
+            if !wide, !barHidden, !(searching && !searchPath.isEmpty) {
+                BottomTabBar(tab: tab, select: select, searching: searching, query: $query,
+                             search: startSearch, cancel: endSearch)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeOut(duration: 0.2), value: barHidden)
         .hideTopScrollEdgeEffect()
-        // The keyboard covers the bar instead of pushing it up.
-        .ignoresSafeArea(.keyboard, edges: .bottom)
+        // The keyboard covers the bar instead of pushing it up, except while searching: then
+        // the field rides up on top of the keyboard.
+        .ignoresSafeArea(.keyboard, edges: searching ? [] : .bottom)
         .environment(\.lumenWide, wide)
-        .environment(\.openSearch, { searching = true })
-        .sheet(isPresented: $searching) {
-            SearchView().environment(\.lumenWide, wide).hideTopScrollEdgeEffect()
-        }
+        .environment(\.openSearch, startSearch)
     }
 
     private func select(_ item: AppTab) {
+        if searching { endSearch() }
         opened.insert(item)
         tab = item
+    }
+
+    private func startSearch() {
+        withAnimation(.spring(duration: 0.35, bounce: 0.15)) { searching = true }
+    }
+
+    private func endSearch() {
+        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+            searching = false
+            query = ""
+            searchPath = NavigationPath()
+        }
     }
 
     @ViewBuilder
@@ -124,28 +147,54 @@ enum AppTab: String, CaseIterable, Identifiable {
 struct BottomTabBar: View {
     let tab: AppTab
     let select: (AppTab) -> Void
+    let searching: Bool
+    @Binding var query: String
     let search: () -> Void
+    let cancel: () -> Void
+    @Namespace private var bar
 
     var body: some View {
         HStack(spacing: 8) {
-            tabs
-            // Search sits apart from the tabs in its own glass circle: it opens over the open tab
-            // instead of being a place of its own.
-            Button(action: search) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(LumenColors.textPrimary)
-                    .frame(width: 58, height: 58)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .background(Color(hex: 0x282A32).opacity(0.6), in: Circle())
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            if searching {
+                // The tabs make way and the bar itself becomes the search field.
+                BarSearchField(text: $query, font: LumenFont.inter(17, .regular))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .padding(.horizontal, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color(hex: 0x282A32).opacity(0.6), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    .matchedGeometryEffect(id: "bar", in: bar)
+                    .transition(.opacity)
+                roundButton("xmark", label: "Cancel search", action: cancel)
+                    .matchedGeometryEffect(id: "button", in: bar)
+            } else {
+                tabs
+                    .matchedGeometryEffect(id: "bar", in: bar)
+                    .transition(.opacity)
+                // Search sits apart from the tabs in its own glass circle.
+                roundButton("magnifyingglass", label: "Search", action: search)
+                    .matchedGeometryEffect(id: "button", in: bar)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Search")
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
         .animation(.easeOut(duration: 0.18), value: tab)
+    }
+
+    private func roundButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(LumenColors.textPrimary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 58, height: 58)
+                .background(.ultraThinMaterial, in: Circle())
+                .background(Color(hex: 0x282A32).opacity(0.6), in: Circle())
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     private var tabs: some View {
@@ -183,23 +232,41 @@ struct BottomTabBar: View {
 struct TopTabBar: View {
     let tab: AppTab
     let select: (AppTab) -> Void
+    let searching: Bool
+    @Binding var query: String
     let search: () -> Void
+    let cancel: () -> Void
 
     var body: some View {
         ZStack {
             HStack(spacing: 4) {
-                pillButton(on: false, label: "Search", action: search) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 16, weight: .semibold))
-                }
-                ForEach(AppTab.allCases.filter { $0 != .settings }) { item in
-                    pillButton(on: item == tab, label: item.title, action: { select(item) }) {
-                        Text(item.title).font(LumenFont.inter(17, .medium))
+                if searching {
+                    // The pill widens into a search field; the tabs fold away until Cancel.
+                    BarSearchField(text: $query, font: LumenFont.inter(17, .regular))
+                        .padding(.leading, 14)
+                        .frame(width: 460)
+                        .transition(.opacity)
+                    pillButton(on: true, label: "Cancel", action: cancel) {
+                        Text("Cancel").font(LumenFont.inter(17, .medium))
                     }
-                }
-                pillButton(on: tab == .settings, label: "Settings", action: { select(.settings) }) {
-                    Image(systemName: "gearshape").font(.system(size: 17, weight: .semibold))
+                    .transition(.opacity)
+                } else {
+                    pillButton(on: false, label: "Search", action: search) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 16, weight: .semibold))
+                    }
+                    ForEach(AppTab.allCases.filter { $0 != .settings }) { item in
+                        pillButton(on: item == tab, label: item.title, action: { select(item) }) {
+                            Text(item.title).font(LumenFont.inter(17, .medium))
+                        }
+                    }
+                    .transition(.opacity)
+                    pillButton(on: tab == .settings, label: "Settings", action: { select(.settings) }) {
+                        Image(systemName: "gearshape").font(.system(size: 17, weight: .semibold))
+                    }
+                    .transition(.opacity)
                 }
             }
+            .frame(height: 41)
             .padding(6)
             .background(.ultraThinMaterial.opacity(0.6), in: Capsule())
             .glass(cornerRadius: 999)
@@ -226,6 +293,44 @@ struct TopTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// The search field inside the tab bar: takes the keyboard as soon as it appears.
+struct BarSearchField: View {
+    @Binding var text: String
+    let font: Font
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(LumenColors.textSecondary)
+            TextField("Search", text: $text,
+                      prompt: Text("Channels, films and series").foregroundStyle(LumenColors.textTertiary))
+                .font(font)
+                .foregroundStyle(LumenColors.textPrimary)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($focused)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(LumenColors.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear")
+            }
+        }
+        .padding(.horizontal, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .onAppear {
+            // After the bar's expand animation has started, so the keyboard doesn't fight it.
+            // Not when coming back from a film opened from the results.
+            if text.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focused = true } }
+        }
     }
 }
 

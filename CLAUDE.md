@@ -74,7 +74,7 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     last-watched favourite over a wash of its colour, Watch / All channels, 2- or 4-wide favourite tiles) →
     `LiveChannelsView` (search, category pills, rows white while pressed). Movies/Series: title, Continue watching wide
     cards, poster rows (no hero: Hayat 2026-10-31, nothing drives it without focus; film/series pages keep backdrops).
-    Search = round glass button beside the iPhone bar. iOS 26's top scroll edge effect is off (`hideTopScrollEdgeEffect`). My List tab (`MyListView`,
+    Search expands the bar itself into a field (iPad: the pill; iPhone: the bottom bar, riding above the keyboard) with Cancel, and `SearchView` results cover the open tab (no sheet, Hayat 2026-10-31). iOS 26's top scroll edge effect is off (`hideTopScrollEdgeEffect`). My List tab (`MyListView`,
     `PlaylistStore.myList` in UserDefaults, All / Films / Series). `SearchView` = channels + films + series.
     Ratings as plain text (provider rating, age rating).
   - TV guide (not yet run): shared `PlaylistLoader.loadXtreamGuide/loadGuide` stream XMLTV through `XmltvReader`

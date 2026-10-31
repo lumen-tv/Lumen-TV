@@ -1,13 +1,14 @@
 import Shared
 import SwiftUI
 
-/// Search across the playlist: channels, films and series (the search icon on iPad's top bar,
-/// or at the top of Home and the Movies and Series tabs on iPhone).
+/// Search results across the playlist: channels, films and series. The query is typed in the
+/// tab bar itself, which turns into a search field (Hayat 2026-10-31: no separate search page);
+/// this layer shows over the open tab while the bar is in search mode.
 struct SearchView: View {
+    let query: String
+    @Binding var path: NavigationPath
     @Environment(PlaylistStore.self) private var store
     @Environment(\.lumenWide) private var wide
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
     @State private var results = Results()
     @State private var playing: PlayerRoute?
 
@@ -19,30 +20,26 @@ struct SearchView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    SearchField(text: $query, prompt: "Channels, films and series", autofocus: true)
                     if query.trimmingCharacters(in: .whitespaces).count < 2 {
-                        hint("Type at least two letters.")
+                        hint("Search channels, films and series.")
                     } else if results.isEmpty {
                         hint("Nothing matches “\(query)”.")
                     } else {
                         sections
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .lumenGutter(wide)
-                .padding(.top, 8)
+                .padding(.top, 16)
                 .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.immediately)
+            .belowTopBar()
             .background(AmbientBackground())
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .modifier(Destinations(playlist: store.selected))
         }
         .playerCover($playing)
@@ -121,7 +118,7 @@ struct SearchView: View {
         return results
     }
 
-    /// Film and series pages open inside the search sheet.
+    /// Film and series pages open inside the search layer.
     private struct Destinations: ViewModifier {
         let playlist: Playlist?
 
