@@ -3,7 +3,7 @@ package com.hayat.lumen.util
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** Superscript tags (NFKC) and resolution names. */
+/** Needs a real Unicode normaliser (NFKC), so it runs here rather than in shared's commonTest. */
 class ChannelNamesNormaliseTest {
     private fun check(raw: String, title: String, vararg tags: String) =
         assertEquals(DisplayName(title, tags.toList()), ChannelNames.display(raw))

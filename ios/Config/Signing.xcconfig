@@ -1,0 +1,3 @@
+// Signing. Your Apple team id goes in Local.xcconfig (not committed), which ./generate.sh
+// writes for you once Xcode has made your "Apple Development" certificate.
+#include? "Local.xcconfig"
