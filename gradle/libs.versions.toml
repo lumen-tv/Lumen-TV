@@ -18,6 +18,7 @@ okhttp = "5.5.1"
 coil = "3.6.3"
 junit = "4.13.2"
 kxml2 = "2.3.0"
+orgJson = "20250517"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -59,6 +60,8 @@ coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version
 junit = { module = "junit:junit", version.ref = "junit" }
 # A real XmlPullParser for JVM unit tests (Android's own only exists on the device).
 kxml2 = { module = "net.sf.kxml:kxml2", version.ref = "kxml2" }
+# A real org.json for JVM unit tests (Android's is a stub off the device).
+orgjson = { module = "org.json:json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
