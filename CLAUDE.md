@@ -151,7 +151,9 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   Film details (`get_vod_info`) and episodes (`get_series_info`) are fetched on demand, cached in memory (LRU), not stored.
   User state keyed on provider ids (survive refreshes): `watch_progress` (finished at 95%, saved every 15 s, on pause and
   on leaving; under 30 s isn't saved), `my_list`, `hidden_vod_categories`. `NextUp.pick` chooses a series' Play episode.
-  Display names: `util/VodNames` strips `4K-NF - ` prefixes and `(2021) (FR)` suffixes. Subtitles use Media3's
+  Display names: `util/VodNames` strips `4K-NF - ` prefixes and `(2021) (FR)` suffixes.
+  Episode names: `VodNames.episode(raw, series)` (0.9.3, tested) cuts up to `S01E03`/`1x03`, else the provider tag and the
+  show's name, plus `Episode 3`/`1080p` noise; null → "Episode 3". Same function in `shared/` for iOS. Subtitles use Media3's
   `SubtitleView` (media3-ui) inside an `AndroidView`. Stream URLs: `/movie/u/p/<id>.<ext>`, `/series/u/p/<id>.<ext>`.
 - **Updates** (`data/update/`): version lives in `app/build.gradle.kts` as `lumenVersion`; `versionCode` is derived
   (major·10000 + minor·100 + patch, so 0.2.0 = 200; it was 2 before). `.github/workflows/release.yml` runs on every push

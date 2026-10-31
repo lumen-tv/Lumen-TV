@@ -39,4 +39,45 @@ object VodNames {
         s = s.replace(spaces, " ").trim().ifEmpty { raw.trim() }
         return Name(s, year, tags)
     }
+
+    /** `S01E03`, `S1 E3`, `1x03` and everything before it (provider tag, show name). */
+    private val episodeCode = Regex("(?i)^.*?(?:\\bS\\d{1,2}\\s?E\\d{1,3}|\\b\\d{1,2}x\\d{2,3})\\b")
+    /** A leading `Episode 3`, `Ep. 3` or `E03` with nothing else in it. */
+    private val episodeWord = Regex("(?i)^(?:episode|ep\\.?|e)\\s?\\d{1,3}\\b")
+    /** Release noise at the end: `[1080p]`, `(720p)`, `4K`, `HDR`, `x265`, `WEB-DL`. */
+    private val qualityAtEnd = Regex("(?i)[\\s.]*[\\[(]?\\b(?:2160p|1080p|720p|480p|4k|uhd|fhd|hdr10?|hevc|[hx]\\.?26[45]|web-?(?:dl|rip)|bluray)\\b[\\])]?\\s*$")
+    /** Dashes, colons and dots left at either end (a trailing "..." is part of the name). */
+    private val separators = Regex("^[\\s\\-:–—|.·]+|[\\s\\-:–—|·]+$")
+
+    /**
+     * Cleans an episode's name for display. Providers send things like
+     * `D+ - Modern Family S01E03 - Come Fly with Me` or `NF - Lupin - S01E01`;
+     * the series page and the player only need `Come Fly with Me`.
+     * [series] is the show's (already cleaned) name, dropped when the episode repeats it.
+     * Null when nothing is left but codes, so callers show "Episode 3".
+     */
+    fun episode(raw: String?, series: String? = null): String? {
+        var s = raw?.trim().orEmpty()
+        if (s.isEmpty()) return null
+        val code = episodeCode.find(s)
+        if (code != null) {
+            s = s.substring(code.range.last + 1)
+        } else {
+            s = display(s).title
+            series?.trim()?.takeIf { it.isNotEmpty() }?.let { name ->
+                // Only "Lost - Pilot", never "Lost Souls".
+                val rest = if (s.startsWith(name, ignoreCase = true)) s.substring(name.length) else null
+                if (rest != null && (rest.isBlank() || rest.trimStart().first() in "-:–—|·")) s = rest
+            }
+        }
+        repeat(2) {
+            s = s.replace(separators, "")
+            s = s.replace(qualityAtEnd, "")
+            s = s.replace(episodeWord, "")
+        }
+        s = s.replace(separators, "").replace(spaces, " ").trim()
+        // Just the show's name again ("Modern Family S01E03" or "Modern Family"): nothing to add.
+        if (series != null && s.equals(series.trim(), ignoreCase = true)) return null
+        return s.ifEmpty { null }
+    }
 }
