@@ -85,9 +85,11 @@ struct LivePlayerView: View {
                 HStack {
                     CircleGlassButton(systemImage: "xmark", label: "Close", size: 44, fill: .black.opacity(0.35)) { dismiss() }
                     Spacer()
-                    if pip.isPossible {
+                    if pip.isSupported {
                         CircleGlassButton(systemImage: pip.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
                                           size: 44, fill: .black.opacity(0.35)) { pip.toggle() }
+                            .opacity(pip.isPossible ? 1 : 0.4)
+                            .disabled(!pip.isPossible)
                             .padding(.trailing, 10)
                     }
                     AirPlayButton()
@@ -236,12 +238,20 @@ struct AirPlayButton: UIViewRepresentable {
 /// controls and gestures, which would fight the swipe-to-zap gesture.)
 struct PlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
-    /// Hands over the layer once (the live player builds Picture in Picture on it).
+    /// Hands over the layer once it's on screen (the live player builds Picture in Picture on it).
     var onLayer: ((AVPlayerLayer) -> Void)?
 
     final class LayerView: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+        var onWindow: ((AVPlayerLayer) -> Void)?
+
+        // UIKit calls this when the view joins (or leaves) a window. SwiftUI's makeUIView runs
+        // before that, while the view is still off screen, which is too early for PiP.
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { onWindow?(playerLayer) }
+        }
     }
 
     func makeUIView(context: Context) -> LayerView {
@@ -249,7 +259,7 @@ struct PlayerLayerView: UIViewRepresentable {
         view.playerLayer.player = player
         view.playerLayer.videoGravity = .resizeAspect
         view.backgroundColor = .black
-        onLayer?(view.playerLayer)
+        view.onWindow = onLayer
         return view
     }
 
