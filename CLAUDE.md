@@ -67,7 +67,9 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     polled every 0.5 s. Progress in UserDefaults (`WatchProgress`, no stream URLs: they hold the password), saved every
     15 s and on leaving, 95% = finished, under 30 s not kept.
   - TV look (Hayat approved mockups 2026-10-31; not yet run): one app, layout by `lumenWide` (iPad + regular width).
-    iPad: the TV's glass pill (search · Live TV · Movies · Series · My List · gear) + clock on top; iPhone: floating glass
+    iPad: the TV's glass pill (search · Live TV · Movies · Series · My List · gear) + clock floating over the page
+    (tab pages leave room with `.belowTopBar()`; pushed pages hide it with `.pushedPage()`; a separate band above the
+    pages read as a strip, Hayat 2026-10-31); iPhone: floating glass
     bar at the bottom. Custom tab container in `RootView` (tabs stay alive once opened). Live TV = `HomeView` (hero of the
     last-watched favourite over a wash of its colour, Watch / All channels, 2- or 4-wide favourite tiles) →
     `LiveChannelsView` (search, category pills, rows white while pressed). Movies/Series: title, Continue watching wide

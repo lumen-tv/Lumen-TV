@@ -84,6 +84,7 @@ struct MyListView: View {
             .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
+        .belowTopBar()
         .background(AmbientBackground())
     }
 

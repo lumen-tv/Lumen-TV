@@ -2,14 +2,23 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(PlaylistStore.self) private var store
+    @Environment(\.lumenWide) private var wide
     @State private var addingPlaylist = false
 
     var body: some View {
         NavigationStack {
             List {
+                if wide {
+                    // iPad: the floating pill takes the navigation bar's place, so the title is a row.
+                    Text("Settings")
+                        .font(LumenFont.inter(44, .semibold))
+                        .foregroundStyle(LumenColors.textPrimary)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 4, bottom: 4, trailing: 0))
+                }
                 Section("Playlists") {
                     ForEach(store.playlists) { playlist in
-                        NavigationLink { PlaylistSettingsView(playlist: playlist) } label: { PlaylistRow(playlist: playlist) }
+                        NavigationLink { PlaylistSettingsView(playlist: playlist).pushedPage() } label: { PlaylistRow(playlist: playlist) }
                             .swipeActions {
                                 Button("Remove", role: .destructive) { store.remove(playlist) }
                             }
@@ -24,10 +33,10 @@ struct SettingsView: View {
                 }
                 if let playlist = store.selected {
                     Section {
-                        NavigationLink("Live TV") { CategorySettingsView(kind: .live, playlist: playlist) }
+                        NavigationLink("Live TV") { CategorySettingsView(kind: .live, playlist: playlist).pushedPage() }
                         if playlist.kind == .xtream {
-                            NavigationLink("Movies") { CategorySettingsView(kind: .movies, playlist: playlist) }
-                            NavigationLink("Series") { CategorySettingsView(kind: .series, playlist: playlist) }
+                            NavigationLink("Movies") { CategorySettingsView(kind: .movies, playlist: playlist).pushedPage() }
+                            NavigationLink("Series") { CategorySettingsView(kind: .series, playlist: playlist).pushedPage() }
                         }
                     } header: {
                         Text("Categories")
@@ -36,26 +45,28 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    NavigationLink { RatingsSettingsView() } label: {
+                    NavigationLink { RatingsSettingsView().pushedPage() } label: {
                         LabeledContent("Ratings", value: Omdb.shared.key == nil ? "Off" : "On")
                     }
                 } footer: {
                     Text("IMDb and Rotten Tomatoes scores on film and series pages, with your own free OMDb key.")
                 }
                 Section("Check this device") {
-                    NavigationLink("Test video playback") { TestPlayerView() }
+                    NavigationLink("Test video playback") { TestPlayerView().pushedPage() }
                 }
                 Section("About") {
                     LabeledContent("Version", value: Bundle.main.version)
                     Text("Lumen is a player for your own TV subscription. It doesn't provide any channels or content.")
                         .foregroundStyle(LumenColors.textSecondary)
-                    NavigationLink("Licences") { LicencesView() }
+                    NavigationLink("Licences") { LicencesView().pushedPage() }
                 }
             }
             .font(LumenFont.body)
             .scrollContentBackground(.hidden)
+            .belowTopBar()
             .background(AmbientBackground())
             .navigationTitle("Settings")
+            .toolbar(wide ? .hidden : .automatic, for: .navigationBar)
             .sheet(isPresented: $addingPlaylist) { AddPlaylistView() }
         }
     }

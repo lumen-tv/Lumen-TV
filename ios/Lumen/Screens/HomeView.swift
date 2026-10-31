@@ -26,8 +26,8 @@ struct HomeView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
-                case .allChannels: LiveChannelsView()
-                case .guide: GuideView()
+                case .allChannels: LiveChannelsView().pushedPage()
+                case .guide: GuideView().pushedPage()
                 }
             }
         }
@@ -61,6 +61,7 @@ struct HomeView: View {
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
+            .belowTopBar()
             .refreshable { await store.refreshEverything(playlist) }
             .ambientBackground(tint: hero.map { NameTile.colour(for: $0.title) } ?? LumenColors.ambientCool)
             .sheet(isPresented: $editingFavourites) { FavouritesEditView(playlist: playlist) }

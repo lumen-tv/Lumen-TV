@@ -77,6 +77,7 @@ struct VodTabView: View {
                 .padding(.bottom, 24)
             }
             .scrollIndicators(.hidden)
+            .belowTopBar()
             .refreshable { await store.loadVod(playlist) }
             .background(AmbientBackground())
         }
@@ -91,9 +92,9 @@ struct VodTabView: View {
 extension View {
     /// Where film, series and "See all" links go, for any NavigationStack showing posters.
     func vodDestinations(_ playlist: Playlist) -> some View {
-        navigationDestination(for: Movie.self) { MovieDetailView(movie: $0, playlist: playlist) }
-            .navigationDestination(for: Series.self) { SeriesDetailView(series: $0, playlist: playlist) }
-            .navigationDestination(for: VodCategoryRoute.self) { VodGridView(route: $0, playlist: playlist) }
+        navigationDestination(for: Movie.self) { MovieDetailView(movie: $0, playlist: playlist).pushedPage() }
+            .navigationDestination(for: Series.self) { SeriesDetailView(series: $0, playlist: playlist).pushedPage() }
+            .navigationDestination(for: VodCategoryRoute.self) { VodGridView(route: $0, playlist: playlist).pushedPage() }
     }
 }
 

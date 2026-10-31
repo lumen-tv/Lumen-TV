@@ -14,6 +14,9 @@ struct RootView: View {
     @State private var searching = false
     /// A full-screen page in the open tab (the iPhone TV guide) asked for the bar to go.
     @State private var barHidden = false
+    /// iPad: a pushed page is showing, so the floating pill steps aside for its back button.
+    @State private var topBarHidden = false
+    @State private var topBarHeight: CGFloat = 86
     /// The glow colour each tab's top page shows, painted behind the iPad's pill so it meets the
     /// page without a line.
     @State private var tints = AmbientTints()
@@ -21,13 +24,12 @@ struct RootView: View {
     private var wide: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular }
 
     var body: some View {
-        // iPad: the pill sits above the tabs in a VStack, so pages start below it. (As a top
-        // safeAreaInset, the pages' NavigationStacks with hidden bars ignored it and slid their
-        // first rows under the pill: Hayat's iPad screenshots 2026-10-31.)
-        VStack(spacing: 0) {
-            if wide {
-                TopTabBar(tab: tab, select: select, search: { searching = true })
-            }
+        // iPad: the pill floats over the page, as on the TV, so each page's colours and pictures
+        // run up to the top of the screen. Tab pages leave room for it themselves
+        // (`.belowTopBar()`); pushed pages (a film, All channels, the guide…) hide it and use
+        // their back button (`.pushedPage()`). An earlier version put the pill in its own band
+        // above the pages, which read as a separate strip (Hayat 2026-10-31).
+        ZStack(alignment: .top) {
             ZStack {
                 ForEach(AppTab.allCases) { item in
                     if opened.contains(item) {
@@ -37,24 +39,26 @@ struct RootView: View {
                             .accessibilityHidden(tab != item)
                             // Only the open tab may hide the bar.
                             .transformPreference(TabBarHiddenKey.self) { if tab != item { $0 = false } }
+                            .transformPreference(TopBarHiddenKey.self) { if tab != item { $0 = false } }
                             .environment(\.ambientTab, item.rawValue)
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.topBarSpace, wide ? topBarHeight : 0)
+            if wide, !topBarHidden {
+                TopTabBar(tab: tab, select: select, search: { searching = true })
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBarHeight = $0 }
+                    .transition(.opacity)
+            }
         }
-        // Behind the iPad's pill: the same colour and film picture as the open page, drawn in
-        // screen coordinates so they meet the page without a seam. `.id(tab)` makes a tab switch
-        // swap it at once, like the pages themselves (it used to fade over 0.7 s).
-        .background(
-            AmbientBackground(
-                tint: tints.tint(for: tab.rawValue) ?? LumenColors.ambientCool,
-                backdrop: tints.backdrop(for: tab.rawValue)
-            )
-            .id(tab)
-        )
+        // Only shows where a page doesn't cover the screen. `.id(tab)`: a tab switch swaps it at
+        // once, like the pages themselves.
+        .background(AmbientBackground(tint: tints.tint(for: tab.rawValue) ?? LumenColors.ambientCool).id(tab))
         .environment(\.ambientTints, tints)
         .onPreferenceChange(TabBarHiddenKey.self) { barHidden = $0 }
+        .onPreferenceChange(TopBarHiddenKey.self) { topBarHidden = $0 }
+        .animation(.easeOut(duration: 0.2), value: topBarHidden)
         // iPhone: the floating bar; safeAreaInset makes scroll views inside every tab end above it.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !wide, !barHidden {
@@ -288,5 +292,32 @@ struct TabBarHiddenKey: PreferenceKey {
 extension View {
     func tabBarHidden(_ hidden: Bool = true) -> some View {
         preference(key: TabBarHiddenKey.self, value: hidden)
+    }
+}
+
+/// iPad: set by pushed pages, which hide the floating top pill (they have a back button instead).
+struct TopBarHiddenKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+extension View {
+    /// A page pushed inside a tab: on iPad the top pill steps aside for its back button.
+    func pushedPage() -> some View {
+        preference(key: TopBarHiddenKey.self, value: true)
+    }
+
+    /// A tab's first page: on iPad its scrolling content starts below the floating pill, while
+    /// its background still runs up behind it.
+    func belowTopBar() -> some View {
+        modifier(BelowTopBar())
+    }
+}
+
+private struct BelowTopBar: ViewModifier {
+    @Environment(\.topBarSpace) private var space
+
+    func body(content: Content) -> some View {
+        content.contentMargins(.top, space, for: .scrollContent)
     }
 }
