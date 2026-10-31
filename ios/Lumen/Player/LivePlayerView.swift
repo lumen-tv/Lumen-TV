@@ -61,7 +61,7 @@ struct LivePlayerView: View {
         .statusBarHidden(!chromeVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
-            model.play(channel.streamUrl, debounce: false)
+            model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
             UIApplication.shared.isIdleTimerDisabled = true
             scheduleHide()
         }
@@ -145,7 +145,7 @@ struct LivePlayerView: View {
     private func zap(by step: Int) {
         guard channels.count > 1 else { return }
         index = (index + step + channels.count) % channels.count
-        model.play(channel.streamUrl, debounce: true)
+        model.play(channel.streamUrl, debounce: true, is4K: channel.quality == "4K")
         withAnimation(.easeOut(duration: 0.18)) { chromeVisible = true }
         scheduleHide()
     }
@@ -180,7 +180,7 @@ final class LivePlayerModel {
 
     /// Some channels (often the 4K ones) send HEVC video that Apple's player can't show: you get
     /// the sound over a black picture, and Picture in Picture never becomes possible. When the
-    /// picture hasn't appeared 3 s after the sound started, the channel switches to VLC, which
+    /// picture hasn't appeared 1.5 s after the sound started, the channel switches to VLC, which
     /// shows it (VLC has no Picture in Picture, so the button hides for that channel).
     private(set) var usesVLC = false
     @ObservationIgnored private(set) lazy var vlc = VLCMediaPlayer()
@@ -206,7 +206,9 @@ final class LivePlayerModel {
         }
     }
 
-    func play(_ url: String, debounce: Bool) {
+    /// [is4K]: 4K channels go straight to VLC. They almost always send HEVC that Apple's player
+    /// shows as a black picture, and waiting to find out would mean seconds of black.
+    func play(_ url: String, debounce: Bool, is4K: Bool = false) {
         pending?.cancel()
         videoCheck?.cancel()
         videoCheck = nil
@@ -228,8 +230,8 @@ final class LivePlayerModel {
                 return
             }
             currentURL = parsed
-            // Already known to need VLC: go straight there, no 3 s of black.
-            if layer != nil, Self.needsVLC.contains(Self.vlcKey(parsed)) {
+            // 4K, or already known to need VLC: go straight there, no seconds of black.
+            if layer != nil, is4K || Self.needsVLC.contains(Self.vlcKey(parsed)) {
                 switchToVLC(parsed)
                 return
             }
@@ -258,11 +260,11 @@ final class LivePlayerModel {
         player.replaceCurrentItem(with: nil)
     }
 
-    /// Once per channel: 3 s after the sound starts, is there a picture?
+    /// Once per channel: 1.5 s after the sound starts, is there a picture?
     private func checkVideo() {
         guard videoCheck == nil, let layer, let url = currentURL else { return }
         videoCheck = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(1.5))
             guard let self, !Task.isCancelled, self.currentURL == url,
                   self.player.timeControlStatus == .playing, !layer.isReadyForDisplay else { return }
             self.switchToVLC(url)
