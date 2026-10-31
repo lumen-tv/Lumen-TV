@@ -68,6 +68,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.tv.material3.Icon
 import com.hayat.lumen.R
 import com.hayat.lumen.data.db.VodKind
+import com.hayat.lumen.data.skip.SkipOffer
+import com.hayat.lumen.data.skip.SkipPick
+import com.hayat.lumen.data.skip.SkipSegment
 import com.hayat.lumen.playback.PlayerHolder
 import com.hayat.lumen.ui.components.LumenListItem
 import com.hayat.lumen.ui.components.ProgrammeProgress
@@ -82,16 +85,19 @@ internal enum class VodStatus { LOADING, READY, ENDED, FAILED }
 /**
  * Full-screen film/episode player.
  * OK or Play/Pause: pause and resume · Left/Right: back/forward 10 s; quick taps and holding speed up ([SeekRamp]) ·
- * Up: audio and subtitles · Back: hide the controls, then leave. Your place is saved as you
+ * Down then OK: audio and subtitles · Back: hide the controls, then leave.
+ * During an intro or recap (times from [com.hayat.lumen.data.skip.SkipTimesClient]) a "Skip intro" pill shows and OK
+ * skips it; in the end credits it says "Next episode". Back hides the pill. Your place is saved as you
  * watch; at the end of an episode the next one starts after a short countdown.
  */
 @OptIn(UnstableApi::class)
 @Composable
 fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: String?, startOver: Boolean) {
     val container = LocalAppContainer.current
-    val vm = viewModel { VodPlayerViewModel(container.vod, sourceId, kind, itemId, seriesId, startOver) }
+    val vm = viewModel { VodPlayerViewModel(container.vod, container.skipTimes, container.omdb, container.prefs, sourceId, kind, itemId, seriesId, startOver) }
     val now by vm.now.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
+    val skips by vm.skips.collectAsStateWithLifecycle()
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var status by remember { mutableStateOf(VodStatus.LOADING) }
@@ -111,6 +117,8 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
     var cues by remember { mutableStateOf<List<Cue>>(emptyList()) }
     var countdown by remember { mutableStateOf<Int?>(null) }
     val keys = remember { FocusRequester() }
+    /** The segment whose pill Back put away, so it stays away until the next one. */
+    var skipDismissed by remember { mutableStateOf<Long?>(null) }
 
     fun showControls() {
         controls = true
@@ -176,6 +184,7 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
         status = VodStatus.LOADING
         countdown = null
         cues = emptyList()
+        skipDismissed = null
         p.setMediaItem(PlayerHolder.mediaItem(item.item.url), item.startMs)
         p.prepare()
         p.playWhenReady = true
@@ -234,7 +243,23 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
         onDispose { view.keepScreenOn = false }
     }
 
+    val offer = SkipPick.at(skips, position, duration, hasNext = now?.next != null)
+        ?.takeIf { status == VodStatus.READY && seekTarget == null && !panel && it.segmentStartMs != skipDismissed }
+
+    fun skip(o: SkipOffer) {
+        val p = player ?: return
+        val target = o.targetMs
+        if (target == null) {
+            vm.save(p.duration, p.duration) // the credits count as watched
+            vm.playNext()
+        } else {
+            p.seekTo(target)
+            position = target
+        }
+    }
+
     BackHandler(enabled = panel) { panel = false }
+    BackHandler(enabled = offer != null && !panel && !controls) { skipDismissed = offer?.segmentStartMs }
     BackHandler(enabled = !panel && controls && status == VodStatus.READY) { controls = false }
 
     fun togglePlay() {
@@ -278,9 +303,12 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
                 when (event.key) {
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         if (repeat == 0) {
+                            val o = offer
                             if (buttonFocused && controls) {
                                 buttonFocused = false
                                 panel = true
+                            } else if (o != null) {
+                                skip(o)
                             } else {
                                 togglePlay()
                             }
@@ -338,6 +366,21 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
                 seekDelta = seekTarget?.let { it - seekFrom },
                 tracksButton = if (hasChoices) buttonFocused else null,
             )
+        }
+
+        // Above the controls when they're up, else in the corner, like the Apple TV app.
+        AnimatedVisibility(
+            visible = offer != null,
+            enter = fadeIn(LumenMotion.focus()),
+            exit = fadeOut(LumenMotion.focus()),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = SafeArea.Horizontal, bottom = if (controls) SKIP_ABOVE_CONTROLS else SafeArea.Vertical + 16.dp),
+        ) {
+            // Keeps the last label while fading out.
+            var label by remember { mutableStateOf("") }
+            offer?.let { label = it.label }
+            SkipButton(label, highlighted = !buttonFocused)
         }
 
         val next = now?.nextLabel
@@ -465,6 +508,26 @@ private fun TracksButton(highlighted: Boolean) {
     ) {
         Icon(painterResource(R.drawable.ic_subtitles), contentDescription = null, tint = fg, modifier = Modifier.size(22.dp))
         Text("Audio & Subtitles", style = MaterialTheme.typography.titleSmall, color = fg)
+    }
+}
+
+/**
+ * "Skip intro" / "Skip recap" / "Next episode". Like [TracksButton] it only draws the highlight it's
+ * told to; OK reaches it through the player's key handler. White while OK would press it.
+ */
+@Composable
+internal fun SkipButton(label: String, highlighted: Boolean, modifier: Modifier = Modifier) {
+    val bg = if (highlighted) LumenColors.TextPrimary else Color.Black.copy(alpha = 0.55f)
+    val fg = if (highlighted) LumenColors.Background else LumenColors.TextPrimary
+    Row(
+        modifier
+            .background(bg, RoundedCornerShape(50))
+            .padding(horizontal = 26.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(painterResource(R.drawable.ic_skip_next), contentDescription = null, tint = fg, modifier = Modifier.size(26.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = fg)
     }
 }
 
@@ -631,3 +694,5 @@ private const val SAVE_EVERY_MS = 15_000L
 private const val SEEK_SETTLE_MS = 600L
 private const val CONTROLS_TIMEOUT_MS = 5_000L
 private const val UP_NEXT_SECONDS = 10
+/** Clears the title, progress bar and Audio & Subtitles button. */
+private val SKIP_ABOVE_CONTROLS = 210.dp
