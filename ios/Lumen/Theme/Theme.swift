@@ -52,6 +52,8 @@ enum LumenFont {
 /// Each page's tint reaches the root through `AmbientTints`.
 struct AmbientBackground: View {
     var tint: Color = LumenColors.ambientCool
+    /// A film or series picture over the glows (`PageBackdrop`).
+    var backdrop: String? = nil
     @Environment(\.ambientTints) private var tints
     @Environment(\.ambientTab) private var tab
     @State private var id = UUID()
@@ -77,14 +79,16 @@ struct AmbientBackground: View {
                     center: at(0.9, 1),
                     startRadius: 0, endRadius: max(screen.width, 400) * 0.7
                 )
+                if let backdrop { PageBackdrop(url: backdrop) }
             }
         }
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.7), value: tint)
         // Pages inside a tab tell the root which colour they show (the root's own background
         // and sheets have no `ambientTab`, so they don't count).
-        .onAppear { if let tab { tints?.show(id, tab: tab, tint: tint) } }
+        .onAppear { if let tab { tints?.show(id, tab: tab, tint: tint, backdrop: backdrop) } }
         .onChange(of: tint) { tints?.change(id, tint: tint) }
+        .onChange(of: backdrop) { tints?.change(id, backdrop: backdrop) }
         .onDisappear { tints?.hide(id) }
     }
 }
@@ -96,21 +100,28 @@ struct AmbientBackground: View {
 /// Unlike a PreferenceKey this follows pushes: Home's purple no longer stuck under All channels.
 @Observable
 final class AmbientTints {
-    private struct Entry { let tab: String; var tint: Color; let order: Int }
+    private struct Entry { let tab: String; var tint: Color; var backdrop: String?; let order: Int }
     private var entries: [UUID: Entry] = [:]
     private var counter = 0
 
-    func show(_ id: UUID, tab: String, tint: Color) {
+    func show(_ id: UUID, tab: String, tint: Color, backdrop: String?) {
         counter += 1
-        entries[id] = Entry(tab: tab, tint: tint, order: counter)
+        entries[id] = Entry(tab: tab, tint: tint, backdrop: backdrop, order: counter)
     }
 
     func change(_ id: UUID, tint: Color) { entries[id]?.tint = tint }
 
+    func change(_ id: UUID, backdrop: String?) { entries[id]?.backdrop = backdrop }
+
     func hide(_ id: UUID) { entries[id] = nil }
 
-    func tint(for tab: String) -> Color? {
-        entries.values.filter { $0.tab == tab }.max { $0.order < $1.order }?.tint
+    func tint(for tab: String) -> Color? { top(tab)?.tint }
+
+    /// The film or series picture the tab's top page shows, if any.
+    func backdrop(for tab: String) -> String? { top(tab)?.backdrop }
+
+    private func top(_ tab: String) -> Entry? {
+        entries.values.filter { $0.tab == tab }.max { $0.order < $1.order }
     }
 }
 
@@ -260,9 +271,6 @@ extension EnvironmentValues {
     /// True on a full-width iPad window: the TV-like layout (top pill, wider grids). False on
     /// iPhone and in narrow iPad split-screen windows, which get the one-column phone layout.
     @Entry var lumenWide = false
-    /// iPad: how far the page starts below the top of the screen (status bar + the top pill), so
-    /// a film's backdrop can reach up behind the pill.
-    @Entry var pageTopInset: CGFloat = 0
     /// Opens the search screen (films, series and channels) from any tab.
     @Entry var openSearch: () -> Void = {}
     /// Set by the root: where pages report their glow colour (see `AmbientTints`).

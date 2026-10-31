@@ -91,27 +91,31 @@ func nextUpPlayback(_ series: Series, store: PlaylistStore, playlist: Playlist) 
 
 /// The film or series picture behind the whole page, as on the TV: it stays put while the text
 /// scrolls over it, and fades out into the page through a mask, so it meets the page's own colour
-/// without a band (a fade to a fixed colour left hard edges: Hayat's iPad screenshot 2026-10-31).
-/// iPad: the full screen, under the top pill too, darker on the left behind the text.
-/// iPhone: the top part of the screen.
+/// without a band. iPad: the full screen, darker on the left behind the text. iPhone: the top part.
+///
+/// Placed relative to the whole screen, not to this view (like `AmbientBackground`'s glows): the
+/// iPad's root draws it behind the top pill and the page draws it below, and the two meet without
+/// a seam. It's drawn by `AmbientBackground(backdrop:)`, which also tells the root which picture
+/// the open page shows.
 struct PageBackdrop: View {
-    let url: String?
+    let url: String
     @Environment(\.lumenWide) private var wide
-    @Environment(\.pageTopInset) private var top
 
     var body: some View {
         GeometryReader { geo in
-            let height = wide ? geo.size.height : min(geo.size.height * 0.62, geo.size.width * 1.15)
+            let frame = geo.frame(in: .global)
+            let screen = UIScreen.main.bounds.size
+            let height = wide ? screen.height : min(screen.height * 0.62, screen.width * 1.15)
             // The picture goes in an overlay of a fixed-size frame: a scaledToFill image laid out
             // directly would make the whole page as wide as the picture (SwiftUI sizes a ZStack to
             // its biggest child, unlike a UIImageView with clipsToBounds).
             Color.clear
-                .frame(width: geo.size.width, height: height)
+                .frame(width: screen.width, height: height)
                 .overlay {
-                    if let url, let parsed = URL(string: url) {
+                    if let parsed = URL(string: url) {
                         AsyncImage(url: parsed) { phase in
                             if let image = phase.image {
-                                image.resizable().scaledToFill().transition(.opacity)
+                                image.resizable().scaledToFill()
                             }
                         }
                     }
@@ -134,10 +138,9 @@ struct PageBackdrop: View {
                         startPoint: .top, endPoint: .bottom
                     )
                 }
+                .offset(x: -frame.minX, y: -frame.minY)
         }
-        // iPad: reach up behind the top pill and clock (RootView draws the pill above the page).
-        .padding(.top, wide ? -top : 0)
-        .ignoresSafeArea()
+        .clipped()
         .allowsHitTesting(false)
     }
 }
@@ -206,9 +209,10 @@ private struct DetailTitle: View {
 
 extension View {
     /// Pushed pages show the system back button over the backdrop, with no bar behind it.
-    func detailPageChrome() -> some View {
+    /// [backdrop]: the film or series picture behind the page (and, on iPad, behind the top pill).
+    func detailPageChrome(backdrop: String? = nil) -> some View {
         self.ignoresSafeArea(edges: .top)
-            .background(AmbientBackground())
+            .background(AmbientBackground(backdrop: backdrop))
             .toolbar(.visible, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
@@ -249,8 +253,7 @@ struct MovieDetailView: View {
             .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
-        .background { PageBackdrop(url: info?.backdropUrl ?? movie.posterUrl) }
-        .detailPageChrome()
+        .detailPageChrome(backdrop: info?.backdropUrl ?? movie.posterUrl)
         .task { info = try? await store.movieInfo(movie, in: playlist) }
         .task { omdb = await Omdb.shared.ratings(title: movie.title, year: movie.year?.intValue, series: false) }
         .fullScreenCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
@@ -348,8 +351,7 @@ struct SeriesDetailView: View {
             .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
-        .background { PageBackdrop(url: series.backdropUrl ?? series.posterUrl) }
-        .detailPageChrome()
+        .detailPageChrome(backdrop: series.backdropUrl ?? series.posterUrl)
         .task { omdb = await Omdb.shared.ratings(title: series.title, year: series.year?.intValue, series: true) }
         .task {
             do {
