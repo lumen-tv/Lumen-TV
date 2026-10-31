@@ -53,6 +53,56 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     login / Hide / Remove, plus Add playlist), TV guide, Live categories (OK hide, hold OK rename), Movie and Series
     categories (same), Ratings (the user's OMDb key), Updates, About. Live's Categories and the guide's Guide settings
     open it on their section.
+- **iPhone/iPad app.** Started 2026-10-31 (branch `claude/project-thread-avhbdn`, PR #24). Setup in `docs/IOS.md`.
+  - Phase 1 (ran on Hayat's iPhone 2026-10-31): SwiftUI app in `ios/` (XcodeGen `project.yml`, the .xcodeproj isn't
+    committed): tabs, Settings → Test video playback.
+  - Phase 2 (not yet run on a device): `shared/` Kotlin Multiplatform module. Add playlist (Xtream or M3U; get.php links
+    stored as Xtream) loads channels via `PlaylistLoader`, saves only if that works; login in the Keychain, list in
+    UserDefaults. Live TV: categories → channels (+ search), full-screen AVPlayer, swipe up/down zaps (350 ms debounce).
+    Channels reload at each launch (no on-device database yet). Live TV checked on Hayat's iPhone 2026-10-31: works.
+  - Name tiles + favourites (iOS only for now, Hayat 2026-10-31; not yet run): `ChannelArt` = always `NameTile` (Hayat
+    2026-10-31: provider logos never fit, so none at all on iOS) (style A from the TV's Play-Store plan: palette colour by FNV-1a of the name, white name). Favourites:
+    `PlaylistStore.favouriteKeys` (UserDefaults, playlist id → stable keys in order), hold/swipe a row to toggle,
+    a card row at the top of Live TV, Edit sheet to reorder/remove, the player zaps within favourites.
+  - Movies/Series (not yet run): `PlaylistLoader.loadVod/movieInfo/seriesInfo` (shared, tested), loaded after the channels
+    for Xtream playlists. `ios/Lumen/Vod/`: tabs with Continue watching + category rows (30, See all grid), film and
+    series pages, `VodPlayerView` on VLCKit (SPM package `tylerjonesio/vlckit-spm` 3.6, LGPL; AVPlayer can't do mkv/DTS),
+    polled every 0.5 s. Progress in UserDefaults (`WatchProgress`, no stream URLs: they hold the password), saved every
+    15 s and on leaving, 95% = finished, under 30 s not kept.
+  - TV look (Hayat approved mockups 2026-10-31; not yet run): one app, layout by `lumenWide` (iPad + regular width).
+    iPad: the TV's glass pill (search · Live TV · Movies · Series · My List · gear) + clock on top; iPhone: floating glass
+    bar at the bottom. Custom tab container in `RootView` (tabs stay alive once opened). Live TV = `HomeView` (hero of the
+    last-watched favourite over a wash of its colour, Watch / All channels, 2- or 4-wide favourite tiles) →
+    `LiveChannelsView` (search, category pills, rows white while pressed). Movies/Series: title, Continue watching wide
+    cards, poster rows (no hero: Hayat 2026-10-31, nothing drives it without focus; film/series pages keep backdrops).
+    Search = round glass button beside the iPhone bar. iOS 26's top scroll edge effect is off (`hideTopScrollEdgeEffect`). My List tab (`MyListView`,
+    `PlaylistStore.myList` in UserDefaults, All / Films / Series). `SearchView` = channels + films + series.
+    Ratings as plain text (provider rating, age rating).
+  - TV guide (not yet run): shared `PlaylistLoader.loadXtreamGuide/loadGuide` stream XMLTV through `XmltvReader`
+    (hand-rolled, common Kotlin; tested in `GuideTest`), keeping now − 2 h … now + 36 h for the playlist's tvg-ids, into
+    `Guide` (`nowNext`, `between`, `schedule`; epoch seconds). `.gz` guide files aren't read on iOS yet. Loaded at launch
+    after the channels. Home hero now/next + tile progress, row "now" lines, player line. `GuideView`
+    (Home → TV guide): a horizontal ScrollView holding the ruler + a vertical one (one direction per drag: Hayat found a
+    free 2-axis pan felt like an overlay), opens on the current half hour; channel column pinned with
+    `visualEffect` (render-time offset from its frame in `.scrollView(axis: .horizontal)`; a @State offset lagged a frame
+    and let programmes slide over the tiles); tap = select (iPhone details card in a bottom
+    `safeAreaInset`, above the tab bar / iPad panel with muted preview), double-tap = watch. No guide in the player.
+  - Saved on the phone (not yet run): shared `LibraryCache` writes channels/guide/VOD as JSON to Caches/Lumen/<id>-live|guide|vod.json;
+    launch shows them at once, then refreshes quietly (live + guide after 12 h, VOD after 24 h); failures keep old data.
+  - Settings (not yet run): playlist page (rename, refresh everything, change Xtream login / M3U link: saved only if the
+    channels load, blank password keeps the old; guide link; remove). Categories for Live/Movies/Series: tick = shown,
+    search, Show all / Hide all on the matches, hold/swipe to rename (UserDefaults `hiddenCategories`/`categoryLabels`,
+    keys `l:<name>`, `m:<id>`, `s:<id>`). Ratings: user's OMDb key in the Keychain (`Data/Ratings.swift`, checked first);
+    film/series pages show Rotten Tomatoes %, IMDb + votes, age as plain text, provider score only without OMDb.
+  - Player extras (not yet run): VOD remembers the audio/subtitle track name (`preferredAudioTrack`/`preferredSubtitleTrack`,
+    matched on name then language word). Live TV: Picture in Picture (`Player/PictureInPicture.swift`, button + automatic
+    on leaving the app); not for films (VLCKit has none).
+  - iCloud sync (not yet run; Hayat bought the paid account 2026-10-31): `Data/CloudSync.swift` mirrors the UserDefaults
+    JSON keys (playlists, favourites, watchProgress (merged, newest per item wins), myList, hiddenCategories,
+    categoryLabels) to `NSUbiquitousKeyValueStore` (entitlement only in `project-icloud.yml`, used by generate.sh when
+    Local.xcconfig has `LUMEN_ICLOUD = YES`: a Personal Team can't sign it); logins + OMDb key are synchronizable
+    Keychain items (iCloud Keychain). A playlist arriving from the other device loads via `loadAll()`.
+  - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 
 ## Decisions
@@ -160,6 +210,20 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   (Hayat didn't want their name in links). Public page: https://lumen-tv.github.io (repo `lumen-tv/lumen-tv.github.io`),
   `/get` forwards to the newest APK. `PRIVACY.md` = privacy policy. The brand logo tiles stay in the public build (Hayat's choice
   2026-10-28; they'd have to go for Google Play).
+- **Shared Kotlin** (`shared/`, Kotlin Multiplatform: android + iosArm64 + iosSimulatorArm64 + linuxX64 for tests only):
+  `M3uParser`, `StableKeys` (own `Sha1`), `UrlRedaction` (own `SimpleUri`, matched against `java.net.URI` by
+  `UrlRedactionMatchesUriTest`: stable keys hash its output, so it must never drift), `ChannelNames`, `CategoryNames`
+  (NFKC via expect/actual), `VodNames`, keeping their old packages; the Android app uses them as before. `core/` =
+  iPhone-only for now: `PlaylistLoader` (Ktor + kotlinx.serialization, `XtreamServer`, `XtreamApi`), exported to Swift as
+  `Shared.framework` (`LumenKt.makePlaylistLoader()`, suspend = Swift `async throws`, call from the main actor).
+  Tests: `./gradlew :shared:testAndroidHostTest :shared:linuxX64Test` (native run catches Kotlin/Native regex
+  differences: a negated class with `\p{…}` ignores its other members, so `symbols` uses a lookahead).
+  Xcode runs `ios/build-shared.sh` → `:shared:embedAndSignAppleFrameworkForXcode` (finds Homebrew Java/Android SDK).
+  Cloud sessions can compile the iOS klibs (`:shared:compileKotlinIosArm64`) but can't link the framework or build Swift.
+- **iOS** (`ios/`): SwiftUI, iOS 18+, iPhone + iPad, bundle id `com.hayat.lumen`. Built on Hayat's Mac with Xcode
+  (cloud sessions are Linux: they can't build or check Swift). Hayat has a paid developer account since 2026-10-31 (team id in the uncommitted
+  `ios/Config/Local.xcconfig`). App Store rules for the iOS build: no bundled content or provider links, no `BrandLogos` tiles, ratings as plain
+  text, no self-updater, http allowed via ATS (`NSAllowsArbitraryLoads`), passwords in the Keychain, `PrivacyInfo.xcprivacy`.
 - Shared debug keystore in `keystore/`: signs debug builds and local release builds, so cloud and laptop builds install
   over each other. It can't install over a published (privately signed) release, or the reverse.
 - Backups disabled (`allowBackup=false` + `data_extraction_rules.xml`): credentials stay on the device.
@@ -207,7 +271,7 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
 
 ## Working notes
 
-- Build: `./gradlew assembleDebug` · Tests: `./gradlew testDebugUnitTest` · Lint: `./gradlew lintDebug`.
+- Build: `./gradlew assembleDebug` · Tests: `./gradlew testDebugUnitTest :shared:testAndroidHostTest :shared:linuxX64Test` · Lint: `./gradlew lintDebug`.
 - **Judge smoothness only on release builds.** Debug Compose builds are visibly janky on the Chromecast; release
   (`./gradlew assembleRelease`, R8 + same shared key, installs over debug) was confirmed smooth on the TV.
   Startup profile: the libraries ship theirs, and `app/src/main/baseline-prof.txt` (0.7.0) adds wildcard rules for all of
