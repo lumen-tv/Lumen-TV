@@ -32,7 +32,9 @@ struct LivePlayerView: View {
                 pip.attach(layer)
             }).ignoresSafeArea()
             if model.usesVLC {
-                LiveVLCView(player: model.vlc).ignoresSafeArea()
+                // VLC's view catches touches (UIKit views win over SwiftUI's tap gesture), which
+                // stopped taps from showing the buttons on 4K channels. The video doesn't need them.
+                LiveVLCView(player: model.vlc).ignoresSafeArea().allowsHitTesting(false)
             }
 
             if model.isBuffering {
@@ -349,6 +351,7 @@ struct LiveVLCView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.backgroundColor = .black
+        view.isUserInteractionEnabled = false
         player.drawable = view
         player.play()
         return view

@@ -572,6 +572,7 @@ struct VLCVideoView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.backgroundColor = .black
+        view.isUserInteractionEnabled = false // taps belong to the controls above
         model.player.drawable = view
         return view
     }
