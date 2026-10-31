@@ -9,7 +9,7 @@ plugins {
 
 // The app's version. Bump this to publish an update: when it reaches main, the Release
 // workflow builds the APK and puts it on GitHub Releases, and the TV offers it.
-val lumenVersion = "0.9.0"
+val lumenVersion = "0.9.1"
 
 android {
     namespace = "com.hayat.lumen"

@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -188,15 +187,6 @@ private fun UpdatesSection(onOpenUpdate: () -> Unit, modifier: Modifier = Modifi
     val updates = LocalAppContainer.current.updates
     val available by updates.available.collectAsStateWithLifecycle()
     var checked by remember { mutableStateOf(false) }
-    val installFocus = remember { FocusRequester() }
-    // The check button goes away when an update turns up, which would drop focus to the top of the
-    // menu: hand it to the new install button instead.
-    LaunchedEffect(available != null) {
-        if (available != null && checked) {
-            withFrameNanos { }
-            runCatching { installFocus.requestFocus() }
-        }
-    }
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("You have Lumen ${updates.currentVersion}.", style = MaterialTheme.typography.bodyLarge, color = LumenColors.TextSecondary)
@@ -206,21 +196,29 @@ private fun UpdatesSection(onOpenUpdate: () -> Unit, modifier: Modifier = Modifi
                 UpdateDot()
                 Text("Lumen ${ready.version} is ready to install.", style = MaterialTheme.typography.titleMedium, color = LumenColors.TextPrimary)
             }
-            Row { LumenButton(text = "Update to ${ready.version}", onClick = onOpenUpdate, modifier = Modifier.focusRequester(installFocus)) }
-        } else {
-            Row {
-                LumenButton(text = "Check for updates", onClick = {
-                    updates.checkInBackground(force = true)
-                    checked = true
-                })
-            }
-            if (checked) {
-                Text(
-                    "Checking GitHub… If a newer version is out, it shows here in a moment.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = LumenColors.TextSecondary,
-                )
-            }
+        }
+        Row {
+            // One button that turns from "Check for updates" into "Update to …" when GitHub has a newer
+            // version. Two separate buttons would remove the focused one, and on the TV Android then hands
+            // focus to the top of the menu (Playlists) at once, before Lumen could move it anywhere.
+            LumenButton(
+                text = if (ready != null) "Update to ${ready.version}" else "Check for updates",
+                onClick = {
+                    if (ready != null) {
+                        onOpenUpdate()
+                    } else {
+                        updates.checkInBackground(force = true)
+                        checked = true
+                    }
+                },
+            )
+        }
+        if (ready == null && checked) {
+            Text(
+                "Checking GitHub… If a newer version is out, it shows here in a moment.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LumenColors.TextSecondary,
+            )
         }
         Text(
             "Lumen also checks by itself when it starts and every few hours.",
