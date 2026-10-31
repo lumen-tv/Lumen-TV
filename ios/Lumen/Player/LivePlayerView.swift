@@ -228,6 +228,11 @@ final class LivePlayerModel {
                 return
             }
             currentURL = parsed
+            // Already known to need VLC: go straight there, no 3 s of black.
+            if layer != nil, Self.needsVLC.contains(Self.vlcKey(parsed)) {
+                switchToVLC(parsed)
+                return
+            }
             let item = AVPlayerItem(url: parsed)
             statusObservation = item.observe(\.status) { [weak self] item, _ in
                 guard item.status == .failed else { return }
@@ -264,7 +269,17 @@ final class LivePlayerModel {
         }
     }
 
+    /// Channels that needed VLC, remembered so they open in it at once next time. Stored by
+    /// server + stream file ("example.com/12345.m3u8"), never the full address (it holds the login).
+    private static let vlcDefaultsKey = "liveNeedsVLC"
+    private static var needsVLC: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: vlcDefaultsKey) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue.suffix(500)), forKey: vlcDefaultsKey) }
+    }
+    private static func vlcKey(_ url: URL) -> String { "\(url.host ?? "")/\(url.lastPathComponent)" }
+
     private func switchToVLC(_ url: URL) {
+        Self.needsVLC.insert(Self.vlcKey(url))
         usesVLC = true
         player.pause()
         player.replaceCurrentItem(with: nil)
