@@ -142,6 +142,8 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
         val login = XtreamServer.of(server, username, password) ?: throw LoadException("This playlist's login is incomplete.")
         val root = xtream.seriesInfo(login, seriesId)
         val episodes = ArrayList<Episode>()
+        // "D+ - Modern Family S01E03 - Come Fly with Me" → "Come Fly with Me", as on the TV.
+        val showName = ((root?.get("info") as? JsonObject)?.get("name")).lenient().nonBlank()?.let { VodNames.display(it).title }
         fun read(e: JsonObject, seasonKey: Int?) {
             val id = e["id"].lenient() ?: return
             val info = e["info"] as? JsonObject
@@ -149,7 +151,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
                 id = id,
                 season = e["season"].lenient()?.toIntOrNull() ?: seasonKey ?: 1,
                 episode = e["episode_num"].lenient()?.toIntOrNull() ?: 0,
-                title = e["title"].lenient().nonBlank(),
+                title = VodNames.episode(e["title"].lenient(), showName),
                 durationSecs = info?.get("duration_secs").lenient()?.toLongOrNull()?.takeIf { it > 0 },
                 imageUrl = info?.get("movie_image").lenient().nonBlank(),
                 plot = info?.get("plot").lenient().nonBlank(),
