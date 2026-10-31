@@ -36,10 +36,26 @@ struct SkipRef {
 /// The same rules as `SkipPick` on the TV: intro/recap while they play (wherever they fall, so
 /// after a cold open too), "Next episode" from the credits in the second half when there is one.
 enum SkipPick {
+    /// For credits, a source that gives their end wins: only then is their length known.
     static func merge(_ sources: [[SkipSegment]]) -> [SkipSegment] {
         SkipSegment.Kind.allCases.compactMap { kind in
-            sources.lazy.compactMap { $0.first { $0.kind == kind } }.first
+            let all = sources.compactMap { $0.first { $0.kind == kind } }
+            return kind == .credits ? (all.first { $0.end != nil } ?? all.first) : all.first
         }
+    }
+
+    /// "Next episode" never shows earlier than this before the end.
+    static let creditsLatest: Double = 120
+
+    /// As `SkipPick.creditsStart` on the TV: the databases' copy and the provider's file differ in
+    /// length, so the credits' length is counted back from this file's end, and never more than
+    /// two minutes before it.
+    static func creditsStart(_ credits: SkipSegment, duration: Double) -> Double {
+        var start = credits.start
+        if let end = credits.end, end - credits.start >= 5, end - credits.start <= creditsLatest {
+            start = duration - (end - credits.start)
+        }
+        return max(start, duration - creditsLatest)
     }
 
     static func at(_ segments: [SkipSegment], position: Double, duration: Double, hasNext: Bool) -> SkipOffer? {
@@ -50,7 +66,7 @@ enum SkipPick {
                 if position >= s.start && position < end - 2 { return SkipOffer(kind: s.kind, segmentStart: s.start, target: end) }
             case .credits:
                 guard hasNext, duration > 0, s.start >= duration / 2 else { continue }
-                if position >= s.start && position < (s.end ?? duration) { return SkipOffer(kind: s.kind, segmentStart: s.start, target: nil) }
+                if position >= creditsStart(s, duration: duration) { return SkipOffer(kind: s.kind, segmentStart: s.start, target: nil) }
             }
         }
         return nil
