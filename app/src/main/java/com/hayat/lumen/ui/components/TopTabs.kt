@@ -44,11 +44,11 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 /** [SEARCH] and [SETTINGS] aren't tabs of their own: they open their screen on top. */
-enum class Tab(val label: String) { SEARCH("Search"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), SETTINGS("Settings") }
+enum class Tab(val label: String) { SEARCH("Search"), LIVE("Live TV"), MOVIES("Movies"), SERIES("Series"), MY_LIST("My List"), SETTINGS("Settings") }
 
 /**
  * The top of every main screen, Chillio style: one frosted-glass pill in the middle
- * (search · Live TV · Movies · Series · settings) and the time on the right. [leading] fills
+ * (search · Live TV · Movies · Series · My List · settings) and the time on the right. [leading] fills
  * the left (a status line, say). The open tab keeps a soft fill; the focused item turns white.
  * The settings gear gets a blue dot while an update is waiting.
  */

@@ -23,10 +23,13 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   - Hold OK on a category in Live to hide it. Live → **Categories** lists every category with a tick (OK toggles),
     a search, and Show all / Hide all (acting on just the search matches). OK on a playlist row hides the whole playlist.
 - **Movies and series (VOD).** Merged into main (PR #10), checked on the TV 2026-10-28.
-  - Home's top bar: Live TV · Movies · Series. Each VOD tab: hero (backdrop, title, year, genre, plot) over poster rows:
-    Continue watching (that tab only, not Home), My List, then the provider's categories (30 posters + "See all").
-    Down into a poster row lands on its first poster; Up returns to the poster you left in that row (`RowFocus`, 0.7.1).
-    Hold OK on a poster = My List; in Continue watching = remove. "See all" has Hide category; hidden ones come back at the
+  - Home's top bar: Live TV · Movies · Series · My List. Each VOD tab: hero (backdrop, title, year, genre, plot) over rows:
+    Continue watching (that tab only, not Home; wide 16:9 `ContinueCard`s with episode, time left and progress, 0.8.0),
+    then the provider's categories (30 posters + "See all").
+    **My List tab** (`ui/vod/MyListScreen.kt`, 0.8.0): films and series together, newest first (`observeMyListAll`), All /
+    Films / Series pills (OK picks), a 6-column grid; hold OK removes. Replaced the My List rows on Movies/Series.
+    Down into a poster row lands on its first poster; Up returns to the poster you left in that row (`RowFocus`, 0.7.1); the focused row always scrolls fully to the top of the list (`RowItem`, 0.7.2: the default nudge cropped the enlarged poster).
+    Hold OK on a poster = add to / remove from My List; in Continue watching = remove. "See all" has Hide category; hidden ones come back at the
     bottom of the tab. Search (films + series) from the tab. Film page: Play / Resume from 42:10 / Start over / My List.
     Series page: Resume S1 · E3, seasons, episodes with progress. Player: OK pause, Left/Right 10 s (quick taps grow to 30 s, 1 min; holding ramps from 1 min/s to 20 min/s
     by hold time, see `SeekRamp`; "+12:30" shows while seeking),
@@ -44,6 +47,15 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     24 h. Left/Right = programmes, Up/Down (and CH+/-) = the guide of the channel above/below in the zapping list while the
     stream keeps playing (keeps the same time, `GuidePick`), OK = watch that channel, Back or 12 s idle = close.
     Programmes are plain time + title text, no boxes (Hayat: boxes looked selectable), selected = bright + white underline.
+- **Skip intro (0.9.0).** Merged (PR #25), released.
+  - Series episodes only. `data/skip/SkipTimesClient` asks TheIntroDB (by TMDB id), IntroDB and SkipDB (by IMDb id) for
+    that exact episode's intro/recap/credits times (providers send none; cold opens put intros minutes in, so a fixed
+    window was rejected by Hayat). TMDB id = Xtream `info.tmdb`, else SkipDB title search; IMDb id = OMDb (user's key).
+    `SkipPick.at` (tested) picks the offer: "Skip intro"/"Skip recap" pill bottom right while it plays (OK jumps to the
+    end), "Next episode" from the credits (when there is a next). Back hides it. No data = no button.
+    0.9.2: credits are timed back from the end of the file (DB credit length, when a source gives the end) and never
+    before the last 2 min (`SkipPick.creditsStart`): the DB's copy and the provider's file differ in length (Hayat saw
+    it 3 min early). Checked on the TV 2026-10-31 (intro worked).
 - **Settings page (0.4.0).** Merged (PR #15). Not yet checked on the TV.
   - "Settings" pill at the end of the top tabs (blue dot while an update waits; Home's hint line says so too; the old
     "Update to …" button on Home is gone). Menu left, section right: Playlists (OK = Refresh / Rename / Change link or
@@ -191,7 +203,9 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   Film details (`get_vod_info`) and episodes (`get_series_info`) are fetched on demand, cached in memory (LRU), not stored.
   User state keyed on provider ids (survive refreshes): `watch_progress` (finished at 95%, saved every 15 s, on pause and
   on leaving; under 30 s isn't saved), `my_list`, `hidden_vod_categories`. `NextUp.pick` chooses a series' Play episode.
-  Display names: `util/VodNames` strips `4K-NF - ` prefixes and `(2021) (FR)` suffixes. Subtitles use Media3's
+  Display names: `util/VodNames` strips `4K-NF - ` prefixes and `(2021) (FR)` suffixes.
+  Episode names: `VodNames.episode(raw, series)` (0.9.3, tested) cuts up to `S01E03`/`1x03`, else the provider tag and the
+  show's name, plus `Episode 3`/`1080p` noise; null → "Episode 3". Same function in `shared/` for iOS. Subtitles use Media3's
   `SubtitleView` (media3-ui) inside an `AndroidView`. Stream URLs: `/movie/u/p/<id>.<ext>`, `/series/u/p/<id>.<ext>`.
 - **Updates** (`data/update/`): version lives in `app/build.gradle.kts` as `lumenVersion`; `versionCode` is derived
   (major·10000 + minor·100 + patch, so 0.2.0 = 200; it was 2 before). `.github/workflows/release.yml` runs on every push

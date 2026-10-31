@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -93,6 +96,66 @@ fun PosterCard(
             }
         }
     }
+}
+
+/** Width of the wide 16:9 Continue watching cards. */
+val WideCardWidth = 236.dp
+
+/**
+ * A Continue watching card: wide, with the title's backdrop ([backdropUrl], else the poster, cropped),
+ * its name, the episode and time left, and a progress line.
+ */
+@Composable
+fun ContinueCard(
+    poster: Poster,
+    backdropUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val container = LocalAppContainer.current
+    val name = remember(poster.name) { VodNames.display(poster.name) }
+    LumenCard(onClick = onClick, onLongClick = onLongClick, modifier = modifier.width(WideCardWidth).aspectRatio(16f / 9f)) {
+        Box(Modifier.fillMaxSize().background(LumenColors.GlassStrong)) {
+            val image = backdropUrl ?: poster.posterUrl
+            if (image != null) {
+                AsyncImage(
+                    model = image,
+                    contentDescription = poster.name,
+                    imageLoader = container.images,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Column(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Text(name.title, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val detail = listOfNotNull(
+                    if (poster.season != null && poster.episode != null) episodeLabel(poster.season, poster.episode) else null,
+                    timeLeft(poster),
+                ).joinToString("  ·  ")
+                if (detail.isNotEmpty()) {
+                    Text(detail, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.75f), maxLines = 1)
+                }
+                poster.progress?.let {
+                    Spacer(Modifier.height(6.dp))
+                    ProgrammeProgress(it, color = Color.White, height = 3.dp)
+                }
+            }
+        }
+    }
+}
+
+/** "24 min left", or null when the length isn't known. */
+private fun timeLeft(poster: Poster): String? {
+    val position = poster.positionMs ?: return null
+    val duration = poster.durationMs?.takeIf { it > 0 } ?: return null
+    return formatDuration((duration - position).coerceAtLeast(60_000)) + " left"
 }
 
 /** The tile at the end of a row that opens the whole category. */

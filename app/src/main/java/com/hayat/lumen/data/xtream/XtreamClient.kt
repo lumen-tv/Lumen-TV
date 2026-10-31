@@ -68,6 +68,8 @@ data class XtreamSeriesInfo(
     val episodes: List<XtreamEpisode>,
     val cast: String?,
     val director: String?,
+    /** The show's TMDB id, which many panels send in `info.tmdb`; used to look up intro times. */
+    val tmdbId: String? = null,
 )
 
 data class XtreamStream(
@@ -310,6 +312,7 @@ class XtreamClient(private val http: OkHttpClient) {
             val episodes = ArrayList<XtreamEpisode>()
             var cast: String? = null
             var director: String? = null
+            var tmdb: String? = null
             if (reader.peek() != JsonToken.BEGIN_OBJECT) {
                 reader.skipValue()
                 return@get XtreamSeriesInfo(emptyList(), emptyList(), null, null)
@@ -335,6 +338,7 @@ class XtreamClient(private val http: OkHttpClient) {
                             when (reader.nextName()) {
                                 "cast" -> cast = reader.lenientString().nonBlank()
                                 "director" -> director = reader.lenientString().nonBlank()
+                                "tmdb", "tmdb_id" -> tmdb = reader.lenientString()?.trim()?.takeIf { it.isNotEmpty() && it.all(Char::isDigit) && it != "0" } ?: tmdb
                                 else -> reader.skipValue()
                             }
                         }
@@ -366,6 +370,7 @@ class XtreamClient(private val http: OkHttpClient) {
                 episodes = episodes.sortedWith(compareBy({ it.season }, { it.episode })),
                 cast = cast,
                 director = director,
+                tmdbId = tmdb,
             )
         }
 

@@ -32,6 +32,7 @@ import com.hayat.lumen.data.db.VodKind
 import com.hayat.lumen.ui.components.Tab
 import com.hayat.lumen.ui.theme.LumenColors
 import com.hayat.lumen.ui.vod.MovieDetailScreen
+import com.hayat.lumen.ui.vod.MyListScreen
 import com.hayat.lumen.ui.vod.SeriesDetailScreen
 import com.hayat.lumen.ui.vod.VodBrowseScreen
 import com.hayat.lumen.ui.vod.VodCategoryScreen
@@ -55,6 +56,7 @@ data object UpdateRoute : Route
 /** The Movies and Series tabs. They sit right above Home in the back stack, so Back returns to Live TV. */
 data object MoviesTabRoute : Route
 data object SeriesTabRoute : Route
+data object MyListTabRoute : Route
 /** "See all" for one category. */
 data class VodCategoryRoute(val row: VodCategoryRow) : Route
 data object VodSearchRoute : Route
@@ -99,10 +101,11 @@ fun LumenRoot(onExit: () -> Unit) {
             val section = if (container.updates.available.value != null) SettingsSection.UPDATES else SettingsSection.PLAYLISTS
             backStack.add(SettingsRoute(section))
         } else {
-            backStack.removeAll { it == MoviesTabRoute || it == SeriesTabRoute }
+            backStack.removeAll { it == MoviesTabRoute || it == SeriesTabRoute || it == MyListTabRoute }
             when (tab) {
                 Tab.MOVIES -> backStack.add(MoviesTabRoute)
                 Tab.SERIES -> backStack.add(SeriesTabRoute)
+                Tab.MY_LIST -> backStack.add(MyListTabRoute)
                 else -> Unit
             }
         }
@@ -190,6 +193,9 @@ fun LumenRoot(onExit: () -> Unit) {
                     onSeeAll = { backStack.add(VodCategoryRoute(it)) },
                     onSearch = { backStack.add(VodSearchRoute) },
                 )
+            }
+            entry<MyListTabRoute> {
+                MyListScreen(onTab = onTab, onOpen = openPoster, onSearch = { backStack.add(VodSearchRoute) })
             }
             entry<SeriesTabRoute> {
                 VodBrowseScreen(

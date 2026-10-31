@@ -82,8 +82,8 @@ class VodRepository(
     fun continueWatching(kind: VodKind): Flow<List<Poster>> =
         if (kind == VodKind.MOVIE) dao.observeContinueMovies() else dao.observeContinueSeries()
 
-    fun myList(kind: VodKind): Flow<List<Poster>> =
-        if (kind == VodKind.MOVIE) dao.observeMyMovies() else dao.observeMySeries()
+    /** Films and series together, for the My List tab. */
+    fun myListAll(): Flow<List<Poster>> = dao.observeMyListAll()
 
     suspend fun postersIn(row: VodCategoryRow, limit: Int = Int.MAX_VALUE): List<Poster> =
         if (row.kind == VodKind.MOVIE) dao.moviesIn(row.sourceId, row.generation, row.categoryId, limit)

@@ -26,8 +26,6 @@ class VodBrowseViewModel(private val vod: VodRepository, val kind: VodKind) : Vi
         vod.categories(kind).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val continueWatching: StateFlow<List<Poster>> =
         vod.continueWatching(kind).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    val myList: StateFlow<List<Poster>> =
-        vod.myList(kind).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val hiddenCount: StateFlow<Int> =
         vod.hiddenCount(kind).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val sync: StateFlow<VodSync> = vod.sync
@@ -57,6 +55,9 @@ class VodBrowseViewModel(private val vod: VodRepository, val kind: VodKind) : Vi
     fun toggleMyList(poster: Poster, onDone: (Boolean) -> Unit) {
         viewModelScope.launch { onDone(vod.toggleMyList(poster.sourceId, poster.kind, poster.itemId)) }
     }
+
+    /** The wide Continue watching card's picture. */
+    suspend fun backdrop(poster: Poster): String? = vod.hero(poster).backdropUrl
 
     fun removeFromContinue(poster: Poster) {
         viewModelScope.launch { vod.removeFromContinue(poster) }

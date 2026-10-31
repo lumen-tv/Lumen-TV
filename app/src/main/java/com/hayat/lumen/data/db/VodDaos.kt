@@ -147,29 +147,24 @@ interface VodDao {
     )
     fun observeContinueSeries(): Flow<List<Poster>>
 
+    /** The My List tab: films and series together, newest first. */
     @Query(
         """
-        SELECT m.sourceId, 'MOVIE' AS kind, m.streamId AS itemId, m.name, m.posterUrl, m.rating
+        SELECT m.sourceId, 'MOVIE' AS kind, m.streamId AS itemId, m.name, m.posterUrl, m.rating, l.addedAt AS addedAt
         FROM my_list l
         JOIN sources s ON s.id = l.sourceId AND s.hidden = 0
         JOIN movies m ON m.sourceId = l.sourceId AND m.streamId = l.itemId AND m.generation = s.vodGeneration
         WHERE l.kind = 'MOVIE'
-        ORDER BY l.addedAt DESC
-        """,
-    )
-    fun observeMyMovies(): Flow<List<Poster>>
-
-    @Query(
-        """
-        SELECT x.sourceId, 'SERIES' AS kind, x.seriesId AS itemId, x.name, x.posterUrl, x.rating
+        UNION ALL
+        SELECT x.sourceId, 'SERIES' AS kind, x.seriesId AS itemId, x.name, x.posterUrl, x.rating, l.addedAt AS addedAt
         FROM my_list l
         JOIN sources s ON s.id = l.sourceId AND s.hidden = 0
         JOIN series x ON x.sourceId = l.sourceId AND x.seriesId = l.itemId AND x.generation = s.vodGeneration
         WHERE l.kind = 'SERIES'
-        ORDER BY l.addedAt DESC
+        ORDER BY addedAt DESC
         """,
     )
-    fun observeMySeries(): Flow<List<Poster>>
+    fun observeMyListAll(): Flow<List<Poster>>
 
     @Query("DELETE FROM vod_categories WHERE sourceId = :sourceId AND generation != :keep")
     suspend fun deleteCategoriesExcept(sourceId: Long, keep: Int)

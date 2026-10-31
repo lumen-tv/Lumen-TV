@@ -10,6 +10,7 @@ import com.hayat.lumen.data.LiveRepository
 import com.hayat.lumen.data.db.LumenDatabase
 import com.hayat.lumen.data.epg.EpgRepository
 import com.hayat.lumen.data.ratings.OmdbClient
+import com.hayat.lumen.data.skip.SkipTimesClient
 import com.hayat.lumen.data.settings.Preferences
 import com.hayat.lumen.data.update.UpdateRepository
 import com.hayat.lumen.data.vod.VodRepository
@@ -49,6 +50,7 @@ class AppContainer(context: Context) {
     val updates = UpdateRepository(appContext, http, appScope)
     val prefs = Preferences(appContext)
     val omdb = OmdbClient(http)
+    val skipTimes = SkipTimesClient(http)
 
     /** Loads channel logos through [http] (same user agent). Memory cache kept small for the 2 GB TV. */
     val images: ImageLoader = ImageLoader.Builder(appContext)
