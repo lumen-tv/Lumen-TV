@@ -1,5 +1,7 @@
 package com.hayat.lumen.util
 
+import java.text.Normalizer
+
 /** A channel name split for display: "UK: BBC ONE LONDON 4K ●" → "BBC One London" + ["4K"]. */
 data class DisplayName(val title: String, val tags: List<String>)
 
@@ -14,13 +16,14 @@ object ChannelNames {
     // Quality/format tags, kept as small chips. Order matters: the first match per kind wins.
     private val qualityTags = listOf(
         "8K" to Regex("""(?i)\b8K\b"""),
-        "4K" to Regex("""(?i)\b(4K|UHD|2160P?)\b|ᵁᴴᴰ|⁴ᴷ"""),
+        "4K" to Regex("""(?i)\b(4K|UHD|2160P?|3840P?)\b|ᵁᴴᴰ|⁴ᴷ"""),
         "HD" to Regex("""(?i)\b(FHD|HD|1080P?|720P?)\b|ᴴᴰ|ᶠᴴᴰ"""),
     )
     private val noise = Regex("""(?i)\b(SD|HEVC|H\.?26[45]|50FPS|60FPS|RAW|VIP|BACKUP|MULTI|HDR)\b""")
     private val brackets = Regex("""[(\[{]\s*[)\]}]""")
     private val symbols = Regex("""[^\p{L}\p{N}\s&+'’!.\-:/()]""")
     private val spaces = Regex("""\s+""")
+    private val marks = Regex("[™®℠]")
     private val trailingJunk = Regex("""[\s\-:|/.]+$""")
 
     // All-caps words that should stay all-caps when the rest of the name is title-cased.
@@ -32,7 +35,10 @@ object ChannelNames {
     )
 
     fun display(raw: String): DisplayName {
-        var name = raw.replace(prefix, "")
+        // NFKC first: providers write tags in superscript ("SKY SPORTS F1 ³⁸⁴⁰ᴾ" → "… 3840P"),
+        // which no pattern below would see (and "ᴾ" counts as lower case, so it blocked title-casing).
+        // ™ ® ℠ go before it, or NFKC would turn ™ into the letters "TM".
+        var name = Normalizer.normalize(raw.replace(marks, ""), Normalizer.Form.NFKC).replace(prefix, "")
         val tags = mutableListOf<String>()
         for ((tag, pattern) in qualityTags) {
             if (pattern.containsMatchIn(name)) {

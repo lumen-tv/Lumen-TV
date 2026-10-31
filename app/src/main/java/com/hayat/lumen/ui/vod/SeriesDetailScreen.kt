@@ -59,6 +59,7 @@ import com.hayat.lumen.ui.components.ProgrammeProgress
 import com.hayat.lumen.ui.components.episodeLabel
 import com.hayat.lumen.ui.theme.LumenColors
 import com.hayat.lumen.ui.theme.SafeArea
+import com.hayat.lumen.util.VodNames
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -223,6 +224,7 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
                             episode = ep,
                             progress = progress.firstOrNull { it.itemId == ep.id },
                             fallbackImage = hero?.backdropUrl,
+                            seriesTitle = hero?.title,
                             onClick = { onPlay(ep.id) },
                         )
                     }
@@ -235,7 +237,7 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
 }
 
 @Composable
-private fun EpisodeCard(episode: XtreamEpisode, progress: WatchProgressEntity?, fallbackImage: String?, onClick: () -> Unit) {
+private fun EpisodeCard(episode: XtreamEpisode, progress: WatchProgressEntity?, fallbackImage: String?, seriesTitle: String?, onClick: () -> Unit) {
     val container = LocalAppContainer.current
     Column(Modifier.width(EpisodeWidth)) {
         LumenCard(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -268,7 +270,7 @@ private fun EpisodeCard(episode: XtreamEpisode, progress: WatchProgressEntity?, 
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "${episode.episode}. ${episode.title?.let(::cleanEpisodeTitle) ?: "Episode ${episode.episode}"}",
+            "${episode.episode}. ${VodNames.episode(episode.title, seriesTitle) ?: "Episode ${episode.episode}"}",
             style = MaterialTheme.typography.labelLarge,
             color = LumenColors.TextPrimary,
             maxLines = 1,
@@ -282,16 +284,6 @@ private fun EpisodeCard(episode: XtreamEpisode, progress: WatchProgressEntity?, 
             )
         }
     }
-}
-
-/**
- * Providers name episodes "Lupin - S01E01 - Chapter 1"; the card only needs "Chapter 1".
- * Null when there's nothing but the code ("Lupin - S04E08"), so callers show "Episode 8".
- */
-fun cleanEpisodeTitle(title: String): String? {
-    val m = Regex("(?i)^.*?\\bS\\d{1,2}\\s?E\\d{1,3}\\b\\s*[-:–]?\\s*").find(title)
-        ?: return title.trim().ifEmpty { null }
-    return title.substring(m.range.last + 1).trim().ifEmpty { null }
 }
 
 private val EpisodeWidth = 220.dp

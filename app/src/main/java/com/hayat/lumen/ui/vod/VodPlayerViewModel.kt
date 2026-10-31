@@ -106,10 +106,10 @@ class VodPlayerViewModel(
         _now.value = NowPlaying(
             item = item,
             startMs = start,
-            title = seriesTitle.ifEmpty { episode.title.orEmpty() },
-            subtitle = "${episodeLabel(episode.season, episode.episode)}  ${episode.title?.let(::cleanEpisodeTitle) ?: "Episode ${episode.episode}"}".trim(),
+            title = seriesTitle.ifEmpty { VodNames.display(episode.title.orEmpty()).title },
+            subtitle = "${episodeLabel(episode.season, episode.episode)}  ${VodNames.episode(episode.title, seriesTitle) ?: "Episode ${episode.episode}"}".trim(),
             next = next,
-            nextLabel = next?.let { "${episodeLabel(it.season, it.episode)}  ${it.title?.let(::cleanEpisodeTitle) ?: "Episode ${it.episode}"}".trim() },
+            nextLabel = next?.let { "${episodeLabel(it.season, it.episode)}  ${VodNames.episode(it.title, seriesTitle) ?: "Episode ${it.episode}"}".trim() },
         )
         loadSkips(episode)
     }
