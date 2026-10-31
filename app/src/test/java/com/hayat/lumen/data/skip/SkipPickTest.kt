@@ -35,6 +35,29 @@ class SkipPickTest {
         assertNull(SkipPick.at(coldOpen, 2_850_000, duration, hasNext = false))
     }
 
+    @Test fun creditsAreTimedFromTheEndOfThisFile() {
+        // The database's copy has 58 s of credits ending at 48:21; the provider's file is 3 min longer.
+        val credits = listOf(SkipSegment(CREDITS, 2_843_000, 2_901_000))
+        val file = 2_901_000L + 3 * minute
+        assertNull(SkipPick.at(credits, 2_843_000, file, hasNext = true))
+        assertNull(SkipPick.at(credits, file - 59_000, file, hasNext = true))
+        assertEquals("Next episode", SkipPick.at(credits, file - 58_000, file, hasNext = true)?.label)
+    }
+
+    @Test fun creditsNeverShowBeforeTheLastTwoMinutes() {
+        // Only a start time, three minutes before the end of this file.
+        val credits = listOf(SkipSegment(CREDITS, 2_721_000, null))
+        assertNull(SkipPick.at(credits, 2_721_000, duration, hasNext = true))
+        assertNull(SkipPick.at(credits, duration - 121_000, duration, hasNext = true))
+        assertEquals("Next episode", SkipPick.at(credits, duration - 120_000, duration, hasNext = true)?.label)
+    }
+
+    @Test fun creditsWithAnEndBeatAnEarlierSourceWithout() {
+        val a = listOf(SkipSegment(CREDITS, 2_700_000, null))
+        val b = listOf(SkipSegment(CREDITS, 2_843_000, 2_901_000))
+        assertEquals(b, SkipPick.merge(listOf(a, b)))
+    }
+
     @Test fun earlyCreditsAreBadData() {
         val bad = listOf(SkipSegment(CREDITS, 3 * minute, 4 * minute))
         assertNull(SkipPick.at(bad, 3 * minute + 1, duration, hasNext = true))

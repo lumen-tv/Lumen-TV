@@ -47,12 +47,15 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     24 h. Left/Right = programmes, Up/Down (and CH+/-) = the guide of the channel above/below in the zapping list while the
     stream keeps playing (keeps the same time, `GuidePick`), OK = watch that channel, Back or 12 s idle = close.
     Programmes are plain time + title text, no boxes (Hayat: boxes looked selectable), selected = bright + white underline.
-- **Skip intro (0.9.0).** Built on branch `claude/project-thread-pj63cy`. Not yet checked on the TV.
+- **Skip intro (0.9.0).** Merged (PR #25), released.
   - Series episodes only. `data/skip/SkipTimesClient` asks TheIntroDB (by TMDB id), IntroDB and SkipDB (by IMDb id) for
     that exact episode's intro/recap/credits times (providers send none; cold opens put intros minutes in, so a fixed
     window was rejected by Hayat). TMDB id = Xtream `info.tmdb`, else SkipDB title search; IMDb id = OMDb (user's key).
     `SkipPick.at` (tested) picks the offer: "Skip intro"/"Skip recap" pill bottom right while it plays (OK jumps to the
-    end), "Next episode" from the credits (second half only, when there is a next). Back hides it. No data = no button.
+    end), "Next episode" from the credits (when there is a next). Back hides it. No data = no button.
+    0.9.2: credits are timed back from the end of the file (DB credit length, when a source gives the end) and never
+    before the last 2 min (`SkipPick.creditsStart`): the DB's copy and the provider's file differ in length (Hayat saw
+    it 3 min early). Checked on the TV 2026-10-31 (intro worked).
 - **Settings page (0.4.0).** Merged (PR #15). Not yet checked on the TV.
   - "Settings" pill at the end of the top tabs (blue dot while an update waits; Home's hint line says so too; the old
     "Update to …" button on Home is gone). Menu left, section right: Playlists (OK = Refresh / Rename / Change link or
