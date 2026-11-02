@@ -141,7 +141,10 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     remembered per server in UserDefaults `hlsRouteByServer` + `hlsRouteReason` (a "no" retried after 7 days; Settings → Film player shows the answer and has Check again). The probe reads 16 bytes then drops the request (5 s hard stop) so it never holds the provider's one connection. Apple's player
     plays the copy (smoother seeking, PiP); no length, failure or no picture → VLC with the real file at the
     same point, and the server is marked "no" unless its copies have played before. mpv was the next step
-    if this doesn't help (declined for now: big change, untestable from the cloud).
+    if this doesn't help (declined for now: big change, untestable from the cloud). Hayat's provider answers 460 to
+    the .m3u8 copy, so films stay on VLC there. Films often didn't start until reopened by hand (one-connection
+    provider): VLC gets `:http-reconnect`, an opening error or 7 s without picture reopens it by itself after a
+    1.5 s pause (`recover`, same 3-in-2-min limit as the stall watchdog).
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

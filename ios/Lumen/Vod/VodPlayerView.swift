@@ -402,6 +402,8 @@ final class VodPlayerModel {
     @ObservationIgnored private var lastTime: Double = -1
     @ObservationIgnored private var lastAdvance = Date()
     @ObservationIgnored private var recoveries: [Date] = []
+    /// Whether the picture has moved since this film was opened (or reopened).
+    @ObservationIgnored private var hasPlayed = false
     /// Whether the remembered audio/subtitle language has been picked for this film yet.
     @ObservationIgnored private var appliedPreferences = false
 
@@ -470,6 +472,7 @@ final class VodPlayerModel {
         userPaused = false
         lastTime = -1
         lastAdvance = .now
+        hasPlayed = false
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
@@ -509,6 +512,8 @@ final class VodPlayerModel {
         // A network buffer (ms) to ride out slow provider servers. It's also how long a film takes
         // to start (and to resume after a jump): 3 s felt slow, 1.5 s still rides out hiccups.
         media.addOption(":network-caching=1500")
+        // If the provider drops the connection, VLC reconnects by itself instead of stopping.
+        media.addOption(":http-reconnect")
         player.media = media
         resetState(at: seconds)
         player.play()
@@ -546,7 +551,10 @@ final class VodPlayerModel {
             applyPreferences()
         }
         switch player.state {
-        case .error: set(\.failed, true)
+        case .error:
+            // Opening failed: usually the provider still counting the last connection. Try again
+            // by itself (what reopening by hand did), and only then say it can't be played.
+            if !hasPlayed, !failed { recover(at: max(position, pendingVLCJump ?? 0)) } else { set(\.failed, true) }
         case .ended: set(\.ended, true)
         case .buffering, .opening: set(\.isBuffering, !player.isPlaying)
         default: set(\.isBuffering, false)
@@ -670,25 +678,41 @@ final class VodPlayerModel {
 
     /// Some provider servers stop answering after a jump (they allow one connection, and the
     /// jump opens a new one before the old one closes), which left the film frozen until it was
-    /// reopened. When the picture hasn't moved for 15 s without you pausing, the film is reopened
-    /// here at the same point, as you did by hand. At most 3 times in 2 minutes, then it says
-    /// it can't be played.
+    /// reopened. When the picture hasn't moved for 15 s without you pausing (7 s while it's still
+    /// opening: a film that hasn't started by then on this provider never did), the film is
+    /// reopened here at the same point, as you did by hand. At most 3 times in 2 minutes, then it
+    /// says it can't be played.
     private func checkStall(_ time: Double) {
         if userPaused || ended || failed || abs(time - lastTime) > 0.1 {
+            if lastTime >= 0, abs(time - lastTime) > 0.1, isPlaying { hasPlayed = true }
             lastTime = time
             lastAdvance = .now
             return
         }
-        guard Date.now.timeIntervalSince(lastAdvance) > 15, let url else { return }
+        guard Date.now.timeIntervalSince(lastAdvance) > (hasPlayed ? 15 : 7) else { return }
+        recover(at: seekHold?.target ?? pendingVLCJump ?? max(position, time))
+    }
+
+    /// Closes the film and opens it again at `at`, after a short pause so the provider has let go
+    /// of the old connection (it allows only one, and opening straight away was refused too).
+    private func recover(at: Double) {
+        guard let url else { return }
         recoveries = recoveries.filter { Date.now.timeIntervalSince($0) < 120 }
-        guard recoveries.count < 3 else { failed = true; return }
+        guard recoveries.count < 3 else { set(\.failed, true); return }
         recoveries.append(.now)
-        let at = seekHold?.target ?? pendingVLCJump ?? max(position, time)
         pendingVLCJump = nil
         seekHold = nil
+        timer?.invalidate()
         player.stop()
         avPlayer.replaceCurrentItem(with: nil)
-        if engine == .apple { startApple(appleURL ?? url, at: at) } else { startVLC(url, at: at) }
+        set(\.isBuffering, true)
+        let token = startToken
+        let apple = engine == .apple
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard let self, self.startToken == token else { return }
+            if apple { self.startApple(self.appleURL ?? url, at: at) } else { self.startVLC(url, at: at) }
+        }
     }
 
     private func hold(_ seconds: Double) {
