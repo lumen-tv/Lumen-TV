@@ -150,7 +150,7 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     1.5 s pause (`recover`, same 3-in-2-min limit as the stall watchdog).
   - Loading look (Hayat 2026-11-02: style A layout over style C background, /mnt/project-files/ios-mockups/loading.html; not yet run): no system
     spinner anywhere. `Theme/Loading.swift`: `LoadingLine` (thin line, light sweeping through; Reduce Motion = pulse) and
-    `PlaybackLoading` (the picture as a blurred colour wash, drifting; big centred name, detail, "Resuming from 42:10" / "Starting"). Films/episodes show it until
+    `PlaybackLoading` (the poster as a blurred colour wash, drifting; big centred name, detail, "Resuming from 42:10" / "Starting"). Films/episodes show it until
     the picture moves (`VodPlayerModel.started`; `VodPlayback.art/heading/detail`), live channels on the channel's
     `NameTile` colour until playing (`LivePlayerModel.hasPicture`); later hiccups = the line along the bottom only.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.

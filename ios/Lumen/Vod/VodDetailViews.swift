@@ -30,7 +30,7 @@ func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodP
             posterUrl: movie.posterUrl, position: start,
             duration: info?.durationSecs?.doubleValue ?? 0, updated: .now
         ),
-        art: info?.backdropUrl ?? movie.posterUrl,
+        art: movie.posterUrl ?? info?.backdropUrl, // the film's own colours (its poster), not a still
         heading: movie.title
     )
 }
@@ -48,7 +48,7 @@ func episodePlayback(_ series: Series, _ episode: Episode, from start: Double, e
             duration: episode.durationSecs?.doubleValue ?? 0, updated: .now
         )
     )
-    playback.art = episode.imageUrl ?? series.backdropUrl ?? series.posterUrl
+    playback.art = series.posterUrl ?? series.backdropUrl // the show's colours, not the episode's still
     playback.heading = series.title
     playback.detail = "S\(episode.season) · E\(episode.episode)" + (episode.title.map { " \($0)" } ?? "")
     playback.skipRef = SkipRef(
