@@ -54,6 +54,7 @@ struct SettingsView: View {
                 Section("Check this device") {
                     NavigationLink("Test video playback") { TestPlayerView().pushedPage() }
                 }
+                FilmPlayerSection()
                 Section("About") {
                     LabeledContent("Version", value: Bundle.main.version)
                     Text("Lumen is a player for your own TV subscription. It doesn't provide any channels or content.")
@@ -92,6 +93,40 @@ private struct PlaylistRow: View {
         case .loaded(let loaded): return "\(kind) · \(playlist.host) · \(loaded.library.channels.count) channels"
         case .failed(let message): return message
         }
+    }
+}
+
+/// Which player films use for each provider server, and why (`HLSRoute`). Only the server's
+/// name shows, never a link (links hold the login).
+private struct FilmPlayerSection: View {
+    @State private var results = HLSRoute.results()
+
+    var body: some View {
+        Section {
+            if results.isEmpty {
+                Text("Not checked yet: open a film.").foregroundStyle(LumenColors.textSecondary)
+            }
+            ForEach(results.indices, id: \.self) { index in
+                let result = results[index]
+                VStack(alignment: .leading, spacing: 2) {
+                    LabeledContent(result.server, value: result.works ? "Apple's player" : "VLC")
+                    if !result.reason.isEmpty {
+                        Text(result.reason).font(LumenFont.caption).foregroundStyle(LumenColors.textSecondary)
+                    }
+                }
+            }
+            if !results.isEmpty {
+                Button("Check again", systemImage: "arrow.clockwise") {
+                    HLSRoute.reset()
+                    results = []
+                }
+            }
+        } header: {
+            Text("Film player")
+        } footer: {
+            Text("Films play in Apple's player when your provider offers an Apple-friendly copy, else in VLC.")
+        }
+        .onAppear { results = HLSRoute.results() }
     }
 }
 

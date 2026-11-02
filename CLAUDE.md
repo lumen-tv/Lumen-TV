@@ -138,7 +138,7 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     reopens on the last tab (`lastTab`, never Settings). Declined: keyboard shortcuts, Dynamic Type, Recently watched.
     Apple's player first (Hayat 2026-11-02, "option C"; not yet run): for Xtream films/episodes that aren't
     mp4/mov, `HLSRoute` asks the provider for the `.m3u8` copy of the same link (4 s, must start `#EXTM3U`),
-    remembered per server in UserDefaults `hlsRouteByServer` (a "no" retried after 7 days). Apple's player
+    remembered per server in UserDefaults `hlsRouteByServer` + `hlsRouteReason` (a "no" retried after 7 days; Settings → Film player shows the answer and has Check again). The probe reads 16 bytes then drops the request (5 s hard stop) so it never holds the provider's one connection. Apple's player
     plays the copy (smoother seeking, PiP); no length, failure or no picture → VLC with the real file at the
     same point, and the server is marked "no" unless its copies have played before. mpv was the next step
     if this doesn't help (declined for now: big change, untestable from the cloud).

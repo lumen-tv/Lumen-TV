@@ -375,6 +375,8 @@ final class VodPlayerModel {
     @ObservationIgnored private var appleURL: URL?
     /// Each `start` gets a new one, so an .m3u8 check that answers late doesn't start an old film.
     @ObservationIgnored private var startToken = UUID()
+    /// Why the .m3u8 copy was given up on, for Settings.
+    @ObservationIgnored private var copyProblem: String?
     /// Apple's player: where to start once the film is ready, and whether it has started.
     @ObservationIgnored private var appleStartAt: Double = 0
     @ObservationIgnored private var appleStarted = false
@@ -443,10 +445,14 @@ final class VodPlayerModel {
             failed = false
             position = seconds
             Task { [weak self] in
-                let works = await HLSRoute.probe(copy)
+                let problem = await HLSRoute.probe(copy)
                 guard let self, self.startToken == token else { return }
-                if !works { HLSRoute.remember(false, for: parsed) }
-                if works { self.startApple(copy, at: seconds) } else { self.startVLC(parsed, at: seconds) }
+                if let problem {
+                    HLSRoute.remember(false, for: parsed, reason: problem)
+                    self.startVLC(parsed, at: seconds)
+                } else {
+                    self.startApple(copy, at: seconds)
+                }
             }
         }
     }
@@ -485,7 +491,10 @@ final class VodPlayerModel {
         guard let url else { return }
         // The .m3u8 copy didn't play: this provider's copies aren't usable, so later films skip them.
         // (One film failing on a provider whose copies have played before doesn't count.)
-        if playingCopy, HLSRoute.known(for: url) != true { HLSRoute.remember(false, for: url) }
+        if playingCopy, HLSRoute.known(for: url) != true {
+            HLSRoute.remember(false, for: url, reason: copyProblem ?? "Apple's player couldn't play it")
+        }
+        copyProblem = nil
         appleURL = nil
         let at = max(position, appleStartAt)
         avPlayer.pause()
@@ -554,6 +563,7 @@ final class VodPlayerModel {
             // A copy made on the fly can come without a length (it grows as it's made), and then
             // jumping doesn't work: VLC plays the real file instead.
             if playingCopy, !item.duration.seconds.isFinite {
+                copyProblem = "Stream has no length, so no jumping"
                 moveToVLC()
                 return
             }
@@ -578,10 +588,11 @@ final class VodPlayerModel {
             let since = applePlayingSince ?? .now
             applePlayingSince = since
             if playingCopy, layer?.isReadyForDisplay == true, let url, HLSRoute.known(for: url) != true {
-                HLSRoute.remember(true, for: url) // picture and sound: this provider's copies work
+                HLSRoute.remember(true, for: url, reason: "Plays in Apple's player") // picture and sound: they work
             }
             // Sound for 2 s but still no picture: Apple's player can't show this video.
             if let layer, !layer.isReadyForDisplay, Date.now.timeIntervalSince(since) > 2 {
+                copyProblem = "Sound but no picture"
                 moveToVLC()
                 return
             }
@@ -799,9 +810,11 @@ struct VLCVideoView: UIViewRepresentable {
 
 /// Xtream providers can usually hand out a film or episode as an .m3u8 stream as well as its own
 /// file (`/movie/u/p/123.mkv` → `/movie/u/p/123.m3u8`), repackaged for Apple's player. Whether a
-/// provider does is checked once and remembered per server (a "no" is checked again after a week).
+/// provider does is checked once and remembered per server (a "no" is checked again after a week),
+/// with the reason, which Settings → Film player shows.
 enum HLSRoute {
     private static let key = "hlsRouteByServer"
+    private static let reasonKey = "hlsRouteReason"
     private static let retryNo: TimeInterval = 7 * 24 * 3600
 
     /// The .m3u8 link for an Xtream film or episode link, else nil.
@@ -821,20 +834,59 @@ enum HLSRoute {
         return works
     }
 
-    static func remember(_ works: Bool, for url: URL) {
+    static func remember(_ works: Bool, for url: URL, reason: String) {
         var all = UserDefaults.standard.dictionary(forKey: key) as? [String: [Double]] ?? [:]
         all[server(url)] = [works ? 1 : 0, Date.now.timeIntervalSince1970]
         UserDefaults.standard.set(all, forKey: key)
+        var reasons = UserDefaults.standard.dictionary(forKey: reasonKey) as? [String: String] ?? [:]
+        reasons[server(url)] = reason
+        UserDefaults.standard.set(reasons, forKey: reasonKey)
     }
 
-    /// Asks for the .m3u8 and checks it really is a playlist (some servers answer 200 with an error page).
-    static func probe(_ url: URL) async -> Bool {
+    /// For Settings: each server checked so far, whether its copies play, and why.
+    static func results() -> [(server: String, works: Bool, reason: String)] {
+        let all = UserDefaults.standard.dictionary(forKey: key) as? [String: [Double]] ?? [:]
+        let reasons = UserDefaults.standard.dictionary(forKey: reasonKey) as? [String: String] ?? [:]
+        return all.keys.sorted().map { (server: $0, works: all[$0]?.first == 1, reason: reasons[$0] ?? "") }
+    }
+
+    /// Forget every answer, so the next film checks again.
+    static func reset() {
+        UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: reasonKey)
+    }
+
+    /// Asks for the .m3u8 and checks it really is a playlist (some servers answer 200 with an error
+    /// page, or send video). Only the first bytes are read and the request is then dropped, so it
+    /// doesn't hold on to the provider's one connection while the film opens. nil = it is one,
+    /// else why not.
+    static func probe(_ url: URL) async -> String? {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4)
         request.httpMethod = "GET"
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
-        return String(decoding: data.prefix(16), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#EXTM3U")
+        let check = Task { () -> String? in
+            do {
+                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                guard let http = response as? HTTPURLResponse else { return "No answer" }
+                guard http.statusCode == 200 else { return "Server answered \(http.statusCode)" }
+                var head = [UInt8]()
+                for try await byte in bytes {
+                    head.append(byte)
+                    if head.count >= 16 { break }
+                }
+                let text = String(decoding: head, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.hasPrefix("#EXTM3U") ? nil : "Not an Apple stream"
+            } catch {
+                return (error as? URLError)?.code == .timedOut ? "No answer within 4 s" : "Couldn't connect"
+            }
+        }
+        // A hard stop too: a server that sends headers and then nothing would otherwise keep it waiting.
+        let timeout = Task {
+            try? await Task.sleep(for: .seconds(5))
+            check.cancel()
+        }
+        let result = await check.value
+        timeout.cancel()
+        return result
     }
 
     /// Server only (host and port): never the path, which holds the login.
