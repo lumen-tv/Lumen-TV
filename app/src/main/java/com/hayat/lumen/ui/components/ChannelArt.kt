@@ -129,6 +129,17 @@ fun ChannelLogo(name: String, logoUrl: String?, size: Dp, modifier: Modifier = M
     )
 }
 
+/**
+ * The colour of a channel's tile ([ChannelArt]'s background), for the player's loading screen.
+ * Grey/white logos and channels without one get the monogram's colour from the name.
+ */
+@Composable
+fun rememberChannelColour(name: String, logoUrl: String?): Color {
+    BrandLogos.forName(name)?.let { return it.tile }
+    val tint = rememberLogoArt(logoUrl)?.tint?.background
+    return if (tint == null || tint == LumenColors.SurfaceFocused) remember(name) { Monograms.colorFor(name) } else tint
+}
+
 @Immutable
 private class LogoArt(val logo: ImageBitmap, val tint: Tint)
 

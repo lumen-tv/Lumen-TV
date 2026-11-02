@@ -72,6 +72,7 @@ import com.hayat.lumen.ui.components.Tab
 import com.hayat.lumen.ui.components.TopTabs
 import com.hayat.lumen.ui.components.Ambient
 import com.hayat.lumen.ui.components.formatCount
+import com.hayat.lumen.ui.components.LoadingLine
 import com.hayat.lumen.ui.theme.LumenColors
 import com.hayat.lumen.ui.theme.SafeArea
 
@@ -172,6 +173,10 @@ fun VodBrowseScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         color = LumenColors.TextSecondary,
                     )
+                    if (sync is VodSync.Running) {
+                        Spacer(Modifier.height(20.dp))
+                        LoadingLine(maxWidth = 320.dp)
+                    }
                     if (hiddenCount > 0) {
                         Spacer(Modifier.height(24.dp))
                         LumenButton(text = "Show hidden categories", onClick = vm::showHidden)

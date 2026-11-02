@@ -23,6 +23,16 @@ class Preferences(context: Context) {
         _omdbKey.value = clean
     }
 
+    private val seasons = context.getSharedPreferences("series_seasons", Context.MODE_PRIVATE)
+
+    /** The season last picked on a series' page, so it opens there next time. */
+    fun lastSeason(sourceId: Long, seriesId: String): Int? =
+        seasons.getInt("$sourceId/$seriesId", -1).takeIf { it >= 0 }
+
+    fun setLastSeason(sourceId: Long, seriesId: String, season: Int) {
+        seasons.edit { putInt("$sourceId/$seriesId", season) }
+    }
+
     private companion object {
         const val KEY_OMDB = "omdb_key"
     }

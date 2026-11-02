@@ -26,6 +26,8 @@ data class NowPlaying(
     val startMs: Long,
     val title: String,
     val subtitle: String?,
+    /** The film's or series' poster, whose colours make the loading screen. */
+    val artUrl: String?,
     val next: XtreamEpisode?,
     val nextLabel: String?,
 )
@@ -54,6 +56,7 @@ class VodPlayerViewModel(
     private var episodes: List<XtreamEpisode> = emptyList()
     private var seriesTitle: String = ""
     private var seriesYear: Int? = null
+    private var seriesPoster: String? = null
     private var tmdbId: String? = null
     private var imdbId: String? = null
     private var idsLooked = false
@@ -78,7 +81,8 @@ class VodPlayerViewModel(
         }
         val start = if (startOver) 0L else VodRepository.resumePosition(vod.progressNow(sourceId, VodKind.MOVIE, streamId)) ?: 0L
         val name = VodNames.display(item.title)
-        _now.value = NowPlaying(item, start, name.title, name.year?.toString(), next = null, nextLabel = null)
+        val poster = vod.movie(sourceId, streamId)?.posterUrl
+        _now.value = NowPlaying(item, start, name.title, name.year?.toString(), artUrl = poster, next = null, nextLabel = null)
     }
 
     private suspend fun loadEpisode(episodeId: String, startOver: Boolean) {
@@ -87,6 +91,7 @@ class VodPlayerViewModel(
         val name = series?.name?.let(VodNames::display)
         seriesTitle = name?.title.orEmpty()
         seriesYear = name?.year ?: series?.releaseDate?.take(4)?.toIntOrNull()
+        seriesPoster = series?.posterUrl ?: series?.backdropUrl
         val info = vod.seriesInfo(sourceId, seriesId)
         episodes = info.episodes
         tmdbId = info.tmdbId
@@ -108,6 +113,7 @@ class VodPlayerViewModel(
             startMs = start,
             title = seriesTitle.ifEmpty { VodNames.display(episode.title.orEmpty()).title },
             subtitle = "${episodeLabel(episode.season, episode.episode)}  ${VodNames.episode(episode.title, seriesTitle) ?: "Episode ${episode.episode}"}".trim(),
+            artUrl = seriesPoster,
             next = next,
             nextLabel = next?.let { "${episodeLabel(it.season, it.episode)}  ${VodNames.episode(it.title, seriesTitle) ?: "Episode ${it.episode}"}".trim() },
         )

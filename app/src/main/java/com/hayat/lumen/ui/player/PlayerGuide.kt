@@ -35,6 +35,7 @@ import com.hayat.lumen.ui.components.formatDuration
 import com.hayat.lumen.ui.components.formatTime
 import com.hayat.lumen.ui.components.glass
 import com.hayat.lumen.ui.components.timeRange
+import com.hayat.lumen.ui.components.LoadingLine
 import com.hayat.lumen.ui.theme.LumenColors
 import com.hayat.lumen.ui.theme.SafeArea
 import com.hayat.lumen.util.ChannelNames
@@ -106,7 +107,9 @@ fun GuideStrip(browsed: Browsed, schedule: List<Programme>?, selected: Int, now:
             }
             Spacer(Modifier.height(12.dp))
             when {
-                schedule == null -> Message("Loading the guide…")
+                schedule == null -> Box(Modifier.fillMaxWidth().height(ProgrammesHeight), contentAlignment = Alignment.CenterStart) {
+                    LoadingLine(maxWidth = 240.dp)
+                }
                 schedule.isEmpty() -> Message("No guide info for this channel")
                 else -> Programmes(schedule, selected, now, channelKey = channel.id)
             }
