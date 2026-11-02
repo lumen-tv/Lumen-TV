@@ -42,7 +42,7 @@ struct LoadingLine: View {
 
 /// The screen while a film, episode or channel starts (Hayat 2026-11-02: style A's layout over
 /// style C's background): the colours of its picture, blurred into a soft wash that drifts slowly
-/// (or, without a picture, a wash of `colour`), the name, a detail line, what's happening
+/// (or, without a picture, a wash of `colour`), the name, a detail line, what's happening, centred,
 /// ("Resuming from 42:10"), and the loading line. It fades away when the picture appears.
 struct PlaybackLoading: View {
     let art: URL?
@@ -55,7 +55,7 @@ struct PlaybackLoading: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack {
             Color.black
             if let art {
                 GeometryReader { geo in
@@ -76,28 +76,28 @@ struct PlaybackLoading: View {
             } else {
                 colourWash
             }
-            // Dark from the left and the bottom, so the text reads on any picture.
-            LinearGradient(colors: [.black.opacity(0.8), .black.opacity(0.45), .black.opacity(0.12)],
-                           startPoint: .leading, endPoint: .trailing)
-            LinearGradient(colors: [.black.opacity(0.65), .clear], startPoint: .bottom, endPoint: .center)
+            // An even dim, so the text reads on any colours.
+            Color.black.opacity(0.3)
 
-            VStack(alignment: .leading, spacing: 8) {
+            // Big, in the middle of the screen (Hayat 2026-11-02).
+            VStack(spacing: 10) {
                 Text(heading)
-                    .font(LumenFont.inter(32, .bold))
+                    .font(LumenFont.inter(44, .bold))
+                    .multilineTextAlignment(.center)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.6)
+                    .minimumScaleFactor(0.5)
                 if let detail {
-                    Text(detail).font(LumenFont.inter(16, .medium)).lineLimit(1)
+                    Text(detail).font(LumenFont.inter(19, .medium)).multilineTextAlignment(.center).lineLimit(2)
                 }
                 if let status {
-                    Text(status).font(LumenFont.inter(15, .medium)).foregroundStyle(LumenColors.textSecondary)
+                    Text(status).font(LumenFont.inter(17, .medium)).foregroundStyle(LumenColors.textSecondary)
                 }
-                LoadingLine(maxWidth: 320).padding(.top, 8)
+                LoadingLine(maxWidth: 360).padding(.top, 14)
             }
             .foregroundStyle(LumenColors.textPrimary)
-            .frame(maxWidth: 440, alignment: .leading)
+            .frame(maxWidth: 640)
             .padding(.horizontal, 40)
-            .padding(.bottom, 48)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false) // taps go through to the player's controls
