@@ -712,7 +712,10 @@ final class VodPlayerModel {
     /// says it can't be played.
     private func checkStall(_ time: Double) {
         if userPaused || ended || failed || abs(time - lastTime) > 0.1 {
-            if lastTime >= 0, abs(time - lastTime) > 0.1, isPlaying {
+            // Playing on (a small step forward), not the jump to the resume point that the players
+            // report while still opening, which took the loading screen away too early.
+            let step = time - lastTime
+            if lastTime > 0 || time < 3, step > 0.1, step < 3, isPlaying {
                 hasPlayed = true
                 if !started { withAnimation(.easeOut(duration: 0.4)) { started = true } }
             }
