@@ -16,6 +16,15 @@ struct LivePlayerView: View {
     @State private var hideTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
     @Environment(PlaylistStore.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// iPad: the channel list down the left (swipe in from the left edge, or the list button).
+    @State private var listOpen = false
+    /// How far the list has been dragged (in from the edge, or back out) while a finger is down.
+    @State private var listDrag: CGFloat = 0
+
+    /// iPad only (Hayat 2026-11-02): an iPhone screen is too small to give a third of it to a list.
+    private var listAllowed: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular && channels.count > 1 }
+    private static let listWidth: CGFloat = 380
 
     init(channels: [LiveChannel], startIndex: Int) {
         self.channels = channels
@@ -50,16 +59,20 @@ struct LivePlayerView: View {
                     .padding(32)
             }
             if chromeVisible { chrome.transition(.opacity) }
+            if listAllowed { channelList }
         }
         .contentShape(Rectangle())
-        .onTapGesture { toggleChrome() }
+        .onTapGesture {
+            if listOpen { closeList() } else { toggleChrome() }
+        }
         .gesture(
             DragGesture(minimumDistance: 40).onEnded { drag in
-                guard abs(drag.translation.height) > abs(drag.translation.width) else { return }
+                guard !listOpen, listDrag == 0, abs(drag.translation.height) > abs(drag.translation.width) else { return }
                 // Swiping up moves to the next channel, as scrolling a list would.
                 zap(by: drag.translation.height < 0 ? 1 : -1)
             }
         )
+        .simultaneousGesture(listGesture)
         .statusBarHidden(!chromeVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
@@ -93,6 +106,12 @@ struct LivePlayerView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     CircleGlassButton(systemImage: "xmark", label: "Close", size: 44, fill: .black.opacity(0.35)) { dismiss() }
+                    if listAllowed {
+                        CircleGlassButton(systemImage: "list.bullet", label: "Channel list", size: 44, fill: .black.opacity(0.35)) {
+                            openList()
+                        }
+                        .padding(.leading, 10)
+                    }
                     Spacer()
                     if pip.isSupported && !model.usesVLC {
                         CircleGlassButton(systemImage: pip.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
@@ -142,6 +161,69 @@ struct LivePlayerView: View {
             return "\(now.title) · \(now.timeRange)"
         }
         return "\(index + 1) of \(channels.count)"
+    }
+
+    // MARK: Channel list (iPad)
+
+    /// Where the list sits: fully out (0), fully hidden (-width), or following the finger.
+    private var listOffset: CGFloat {
+        let width = Self.listWidth
+        return listOpen ? min(0, max(-width, listDrag)) : min(0, -width + max(0, listDrag))
+    }
+
+    @ViewBuilder
+    private var channelList: some View {
+        // Always there, just off screen when closed, so it can slide out and back smoothly. Only
+        // the offset changes while dragging: the list itself is `Equatable`, so its rows aren't
+        // redrawn on every finger movement.
+        ChannelListPanel(channels: channels, index: index, select: select)
+            .equatable()
+            .frame(width: Self.listWidth)
+            .offset(x: listOffset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .allowsHitTesting(listOpen || listDrag != 0)
+            .accessibilityHidden(!listOpen)
+    }
+
+    /// Starts within 30 pt of the left edge and moves sideways: pulls the list in. With the list
+    /// out, a sideways drag to the left pushes it away.
+    private var listGesture: some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .onChanged { drag in
+                guard listAllowed, abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                if listOpen {
+                    listDrag = min(0, drag.translation.width)
+                } else if drag.startLocation.x < 30 {
+                    listDrag = max(0, drag.translation.width)
+                }
+            }
+            .onEnded { drag in
+                guard listAllowed, listDrag != 0 else { return }
+                let projected = drag.predictedEndTranslation.width
+                let open = listOpen ? !(listDrag < -Self.listWidth / 3 || projected < -200)
+                                    : (listDrag > Self.listWidth / 3 || projected > 200)
+                withAnimation(.spring(duration: 0.3, bounce: 0.1)) {
+                    listOpen = open
+                    listDrag = 0
+                }
+                if open { withAnimation(.easeOut(duration: 0.18)) { chromeVisible = false } }
+            }
+    }
+
+    private func openList() {
+        withAnimation(.spring(duration: 0.3, bounce: 0.1)) { listOpen = true }
+        withAnimation(.easeOut(duration: 0.18)) { chromeVisible = false }
+    }
+
+    private func closeList() {
+        withAnimation(.spring(duration: 0.3, bounce: 0.1)) { listOpen = false }
+    }
+
+    /// A tap in the list: watch that channel (the list stays out, so you can keep looking).
+    private func select(_ newIndex: Int) {
+        guard newIndex != index else { return }
+        index = newIndex
+        model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
     }
 
     private func zap(by step: Int) {
@@ -366,4 +448,70 @@ struct LiveVLCView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UIView, context: Context) {}
+}
+
+/// iPad: the channels you're zapping through, down the left of the live player, with what's on
+/// now. The playing one is white (the TV's focus look). Tap one to watch it.
+struct ChannelListPanel: View, Equatable {
+    let channels: [LiveChannel]
+    let index: Int
+    let select: (Int) -> Void
+    @Environment(PlaylistStore.self) private var store
+
+    /// Redrawn only when the playing channel changes, not while the panel is dragged.
+    static func == (a: Self, b: Self) -> Bool { a.index == b.index && a.channels.count == b.channels.count }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    Text("Channels")
+                        .font(LumenFont.inter(15, .semibold))
+                        .foregroundStyle(LumenColors.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
+                    // Positions as ids (see `ChannelRows`).
+                    ForEach(channels.indices, id: \.self) { i in
+                        row(i).id(i)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 24)
+            }
+            .scrollIndicators(.hidden)
+            .onAppear { proxy.scrollTo(index, anchor: .center) }
+            .onChange(of: index) { _, now in proxy.scrollTo(now, anchor: .center) }
+        }
+        // A tap on the list's empty space stays in the list (the video behind would close it).
+        .contentShape(Rectangle())
+        .onTapGesture {}
+        // Flat dark glass: a live blur over moving video would cost every frame.
+        .background(Color(hex: 0x0D0F14).opacity(0.86))
+        .overlay(alignment: .trailing) { Rectangle().fill(Color.white.opacity(0.10)).frame(width: 1) }
+        .ignoresSafeArea()
+    }
+
+    private func row(_ i: Int) -> some View {
+        let channel = channels[i]
+        let on = i == index
+        return Button { select(i) } label: {
+            HStack(spacing: 12) {
+                ChannelLogo(url: channel.logoUrl, title: channel.title, size: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(channel.title).font(LumenFont.inter(16, .semibold)).lineLimit(1)
+                    if let now = store.nowNext(channel)?.now {
+                        Text(now.title).font(LumenFont.inter(13)).lineLimit(1)
+                            .foregroundStyle(on ? LumenColors.background.opacity(0.7) : LumenColors.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(on ? LumenColors.background : LumenColors.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(on ? Color.white : Color.clear, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }

@@ -127,6 +127,10 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     network-caching 1500; iPhone players go landscape (`ScreenOrientation` + app delegate mask); swipe down closes the
     film player (not live: vertical swipes zap). Series page opens on the Next-up season, else the last picked
     (`lastSeason` in UserDefaults), with its pill scrolled into view.
+    iPad live player channel list (Hayat 2026-11-02: iPad only, only if smooth; "Recently watched" row declined):
+    swipe in from the left edge (or the list button) → `ChannelListPanel` (the zapping list, now line, playing row
+    white), follows the finger by offset only (panel is `Equatable`, flat dark fill, no blur); tap = watch, tap video or
+    swipe left = close.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 
