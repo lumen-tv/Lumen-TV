@@ -386,6 +386,13 @@ final class VodPlayerModel {
     @ObservationIgnored private var lastScrubJump = Date.distantPast
     @ObservationIgnored private var appleSeeking = false
     @ObservationIgnored private var appleScrubNext: Double?
+    /// A jump asked for before VLC can jump (just after opening): done once it's playing.
+    @ObservationIgnored private var pendingVLCJump: Double?
+    /// Stall watchdog (`checkStall`): you didn't pause, yet the picture hasn't moved for a while.
+    @ObservationIgnored private var userPaused = false
+    @ObservationIgnored private var lastTime: Double = -1
+    @ObservationIgnored private var lastAdvance = Date()
+    @ObservationIgnored private var recoveries: [Date] = []
     /// Whether the remembered audio/subtitle language has been picked for this film yet.
     @ObservationIgnored private var appliedPreferences = false
 
@@ -403,6 +410,9 @@ final class VodPlayerModel {
         avPlayer.replaceCurrentItem(with: nil)
         guard let parsed = URL(string: url) else { failed = true; return }
         self.url = parsed
+        pendingVLCJump = nil
+        seekHold = nil
+        recoveries = []
         if Self.prefersApple(parsed) {
             startApple(parsed, at: seconds)
         } else {
@@ -417,6 +427,9 @@ final class VodPlayerModel {
         ended = false
         isBuffering = true
         appliedPreferences = false
+        userPaused = false
+        lastTime = -1
+        lastAdvance = .now
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
@@ -471,7 +484,13 @@ final class VodPlayerModel {
 
     private func poll() {
         if engine == .apple { pollApple(); return }
-        update(position: Double(player.time.intValue) / 1000)
+        let time = Double(player.time.intValue) / 1000
+        if let target = pendingVLCJump, player.isPlaying, player.isSeekable {
+            pendingVLCJump = nil
+            player.time = VLCTime(int: Int32(target * 1000))
+        }
+        checkStall(time)
+        update(position: time)
         if let length = player.media?.length.intValue, length > 0 { set(\.duration, Double(length) / 1000) }
         set(\.isPlaying, player.isPlaying)
         if !appliedPreferences, player.isPlaying, !audioTracks().isEmpty {
@@ -501,7 +520,10 @@ final class VodPlayerModel {
         default: break
         }
         let time = avPlayer.currentTime().seconds
-        if time.isFinite { update(position: time) }
+        if time.isFinite {
+            checkStall(time)
+            update(position: time)
+        }
         let length = item.duration.seconds
         if length.isFinite, length > 0 { set(\.duration, length) }
         let status = avPlayer.timeControlStatus
@@ -524,6 +546,7 @@ final class VodPlayerModel {
     }
 
     func togglePause() {
+        userPaused = isPlaying
         if engine == .apple {
             if avPlayer.rate > 0 { avPlayer.pause() } else { avPlayer.play() }
             isPlaying.toggle()
@@ -538,19 +561,27 @@ final class VodPlayerModel {
             seek(to: max(0, position + Double(seconds)))
             return
         }
-        if seconds > 0 { player.jumpForward(seconds) } else { player.jumpBackward(-seconds) }
-        hold(max(0, position + Double(seconds)))
+        seek(to: max(0, position + Double(seconds)))
     }
 
     /// Lands exactly on `seconds` (letting go of the bar, a skip button).
     func seek(to seconds: Double) {
         appleScrubNext = nil
         if engine == .apple {
-            avPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-        } else {
+            if appleStarted {
+                avPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            } else {
+                appleStartAt = seconds // not open yet: it starts there instead
+            }
+        } else if player.isPlaying, player.isSeekable {
             player.time = VLCTime(int: Int32(seconds * 1000))
+        } else {
+            // Jumping while VLC is still opening the film could leave it stuck for good (you had to
+            // close and reopen it): the jump waits until the film is actually playing.
+            pendingVLCJump = seconds
         }
         hold(seconds)
+        lastAdvance = .now
     }
 
     /// While the bar is dragged: shows the picture near that point, at most a few times a second.
@@ -573,9 +604,32 @@ final class VodPlayerModel {
             }
             return
         }
-        guard Date.now.timeIntervalSince(lastScrubJump) > 0.25 else { return }
+        guard player.isPlaying, player.isSeekable, Date.now.timeIntervalSince(lastScrubJump) > 0.25 else { return }
         lastScrubJump = .now
         player.time = VLCTime(int: Int32(seconds * 1000))
+    }
+
+    /// Some provider servers stop answering after a jump (they allow one connection, and the
+    /// jump opens a new one before the old one closes), which left the film frozen until it was
+    /// reopened. When the picture hasn't moved for 15 s without you pausing, the film is reopened
+    /// here at the same point, as you did by hand. At most 3 times in 2 minutes, then it says
+    /// it can't be played.
+    private func checkStall(_ time: Double) {
+        if userPaused || ended || failed || abs(time - lastTime) > 0.1 {
+            lastTime = time
+            lastAdvance = .now
+            return
+        }
+        guard Date.now.timeIntervalSince(lastAdvance) > 15, let url else { return }
+        recoveries = recoveries.filter { Date.now.timeIntervalSince($0) < 120 }
+        guard recoveries.count < 3 else { failed = true; return }
+        recoveries.append(.now)
+        let at = seekHold?.target ?? pendingVLCJump ?? max(position, time)
+        pendingVLCJump = nil
+        seekHold = nil
+        player.stop()
+        avPlayer.replaceCurrentItem(with: nil)
+        if engine == .apple { startApple(url, at: at) } else { startVLC(url, at: at) }
     }
 
     private func hold(_ seconds: Double) {

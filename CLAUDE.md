@@ -131,6 +131,11 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     swipe in from the left edge (or the list button) → `ChannelListPanel` (the zapping list, now line, playing row
     white), follows the finger by offset only (panel is `Equatable`, flat dark fill, no blur); tap = watch, tap video or
     swipe left = close.
+    Film stalls (Hayat 2026-11-02: jumping just after opening froze until reopened): VLC jumps wait for
+    `isPlaying && isSeekable` (`pendingVLCJump`; Apple: before ready → `appleStartAt`); `checkStall` reopens the film at
+    the same point after 15 s without progress unless paused (max 3 in 2 min, then "can't be played"). PiP already covers
+    films on Apple's player; VLC films can't (VLCKit 3). `Haptics` (channel/tab change, favourite/My List), and the app
+    reopens on the last tab (`lastTab`, never Settings). Declined: keyboard shortcuts, Dynamic Type, Recently watched.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 import Shared
 
 /// A saved playlist. Only what's safe to keep in plain settings; the login is in the Keychain.
@@ -337,6 +338,7 @@ final class PlaylistStore {
     }
 
     func toggleFavourite(_ channel: LiveChannel, in playlist: Playlist) {
+        Haptics.tap()
         var keys = favouriteKeys[playlist.id] ?? []
         if let index = keys.firstIndex(of: channel.key) {
             keys.remove(at: index)
@@ -686,6 +688,7 @@ final class PlaylistStore {
     }
 
     func toggleMyList(_ item: MyListItem, in playlist: Playlist) {
+        Haptics.tap()
         var items = myList[playlist.id] ?? []
         if let index = items.firstIndex(where: { $0.kind == item.kind && $0.id == item.id }) {
             items.remove(at: index)

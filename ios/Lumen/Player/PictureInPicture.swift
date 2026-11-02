@@ -1,10 +1,11 @@
 import AVKit
 import Observation
 
-/// Picture in Picture for live TV: the channel keeps playing in a small window over other apps.
-/// Starts by itself when you leave the app while a channel is full screen, or with the button in
-/// the player. Needs the "audio" background mode (project.yml) and the playback audio session.
-/// Films and episodes play through VLCKit, which has no Picture in Picture, so they don't have it.
+/// Picture in Picture: live TV, and films/episodes that play through Apple's player (.mp4, .m4v,
+/// .mov, .m3u8). The video keeps playing in a small window over other apps. Starts by itself when
+/// you leave the app while it's full screen, or with the button in the player. Needs the "audio"
+/// background mode (project.yml) and the playback audio session. Films in VLC (.mkv and the like,
+/// most of an Xtream library) can't: VLCKit 3 has no Picture in Picture.
 @MainActor
 @Observable
 final class PictureInPicture: NSObject {

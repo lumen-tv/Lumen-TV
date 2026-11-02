@@ -222,12 +222,14 @@ struct LivePlayerView: View {
     /// A tap in the list: watch that channel (the list stays out, so you can keep looking).
     private func select(_ newIndex: Int) {
         guard newIndex != index else { return }
+        Haptics.select()
         index = newIndex
         model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
     }
 
     private func zap(by step: Int) {
         guard channels.count > 1 else { return }
+        Haptics.select()
         index = (index + step + channels.count) % channels.count
         model.play(channel.streamUrl, debounce: true, is4K: channel.quality == "4K")
         withAnimation(.easeOut(duration: 0.18)) { chromeVisible = true }

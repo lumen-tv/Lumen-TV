@@ -115,7 +115,6 @@ struct MyListButton: View {
         }
         .buttonStyle(GlassButtonStyle())
         .accessibilityLabel(inList ? "Remove from My List" : "Add to My List")
-        .sensoryFeedback(.selection, trigger: inList)
     }
 }
 

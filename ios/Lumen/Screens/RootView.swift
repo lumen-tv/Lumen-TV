@@ -8,6 +8,8 @@ import SwiftUI
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var tab: AppTab = .live
+    /// The tab open when the app was last used, opened again at launch (not Settings).
+    @AppStorage("lastTab") private var lastTab = AppTab.live.rawValue
     /// Tabs opened so far. Each stays alive once opened (hidden, not removed), so switching back
     /// keeps its scroll position and pushed pages, as a real tab bar does.
     @State private var opened: Set<AppTab> = [.live]
@@ -85,12 +87,20 @@ struct RootView: View {
         .ignoresSafeArea(.keyboard, edges: searching ? [] : .bottom)
         .environment(\.lumenWide, wide)
         .environment(\.openSearch, startSearch)
+        .onAppear {
+            if let saved = AppTab(rawValue: lastTab), saved != tab {
+                opened.insert(saved)
+                tab = saved
+            }
+        }
     }
 
     private func select(_ item: AppTab) {
         if searching { endSearch() }
+        if item != tab { Haptics.select() }
         opened.insert(item)
         tab = item
+        if item != .settings { lastTab = item.rawValue }
     }
 
     private func startSearch() {
