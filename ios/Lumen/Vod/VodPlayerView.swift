@@ -1,13 +1,12 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-import VLCKitSPM
 
 /// Full-screen film/episode player. Films in formats Apple's player opens (.mp4, .m4v, .mov,
 /// .m3u8) play through it, so they get Picture in Picture. For other Xtream films (most are .mkv,
 /// often with DTS audio) the provider is first asked for an Apple-friendly .m3u8 copy of the same
-/// film (`HLSRoute`); if it has one, Apple's player plays that. Everything else plays through VLC
-/// (VLCKit 3), which has no Picture in Picture.
+/// film (`HLSRoute`); if it has one, Apple's player plays that. Everything else plays through VLC 4
+/// (`VLCEngine`), which has its own Picture in Picture.
 /// If Apple's player fails or shows no picture, the film moves to VLC at the same point.
 /// Tap shows the controls; double-tap the left/right side skips 10 s back/forward.
 /// In a series, "Skip intro" / "Skip recap" shows while that part plays and "Next episode" in the
@@ -21,6 +20,7 @@ struct VodPlayerView: View {
     /// Swipe down to close: how far the picture has been pulled down.
     @State private var pull: CGFloat = 0
     @State private var pip = PictureInPicture()
+    @State private var vlcPiP: VLCPiP?
     @State private var current: VodPlayback
     @State private var queue: [VodPlayback]
     @State private var controlsVisible = true
@@ -42,7 +42,7 @@ struct VodPlayerView: View {
             Color.black.ignoresSafeArea()
             // Both stay in place; only the one playing shows. (VLC must have its view before it
             // starts, which matters when a film moves from Apple's player to VLC mid-way.)
-            VLCVideoView(model: model).ignoresSafeArea()
+            VLCVideo(engine: model.player, pip: $vlcPiP).ignoresSafeArea()
             PlayerLayerView(player: model.avPlayer, onLayer: { layer in
                 model.layer = layer
                 pip.attach(layer)
@@ -111,6 +111,7 @@ struct VodPlayerView: View {
         .onDisappear {
             saveProgress()
             pip.stop()
+            vlcPiP?.stop()
             model.stop()
             UIApplication.shared.isIdleTimerDisabled = false
         }
@@ -140,7 +141,15 @@ struct VodPlayerView: View {
             HStack {
                 Text(current.title).font(LumenFont.headline).lineLimit(1)
                 Spacer()
-                if model.engine == .apple && pip.isSupported {
+                if model.engine == .vlc, let vlcPiP {
+                    Button { vlcPiP.toggle() } label: {
+                        Image(systemName: vlcPiP.isActive ? "pip.exit" : "pip.enter")
+                            .font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
+                    }
+                    .disabled(!vlcPiP.isPossible)
+                    .opacity(vlcPiP.isPossible ? 1 : 0.4)
+                    .accessibilityLabel("Picture in Picture")
+                } else if model.engine == .apple && pip.isSupported {
                     Button { pip.toggle() } label: {
                         Image(systemName: pip.isActive ? "pip.exit" : "pip.enter")
                             .font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
@@ -364,7 +373,7 @@ struct Track {
 final class VodPlayerModel {
     enum Engine { case apple, vlc }
 
-    @ObservationIgnored let player = VLCMediaPlayer()
+    @ObservationIgnored let player = VLCEngine()
     @ObservationIgnored let avPlayer = AVPlayer()
     /// Apple's video layer, to tell "sound but no picture" (e.g. HEVC it can't show).
     @ObservationIgnored weak var layer: AVPlayerLayer?
@@ -507,14 +516,15 @@ final class VodPlayerModel {
 
     private func startVLC(_ parsed: URL, at seconds: Double) {
         engine = .vlc
-        let media = VLCMedia(url: parsed)
-        if seconds > 1 { media.addOption(":start-time=\(Int(seconds))") }
-        // A network buffer (ms) to ride out slow provider servers. It's also how long a film takes
-        // to start (and to resume after a jump): 3 s felt slow, 1.5 s still rides out hiccups.
-        media.addOption(":network-caching=1500")
-        // If the provider drops the connection, VLC reconnects by itself instead of stopping.
-        media.addOption(":http-reconnect")
-        player.media = media
+        var options = [
+            // A network buffer (ms) to ride out slow provider servers. It's also how long a film
+            // takes to start (and to resume after a jump): 3 s felt slow, 1.5 s rides out hiccups.
+            ":network-caching=1500",
+            // If the provider drops the connection, VLC reconnects by itself instead of stopping.
+            ":http-reconnect",
+        ]
+        if seconds > 1 { options.append(":start-time=\(Int(seconds))") }
+        guard player.open(parsed, options: options) else { failed = true; return }
         resetState(at: seconds)
         player.play()
     }
@@ -537,14 +547,14 @@ final class VodPlayerModel {
 
     private func poll() {
         if engine == .apple { pollApple(); return }
-        let time = Double(player.time.intValue) / 1000
+        let time = player.time
         if let target = pendingVLCJump, player.isPlaying, player.isSeekable {
             pendingVLCJump = nil
-            player.time = VLCTime(int: Int32(target * 1000))
+            player.jump(to: target)
         }
         checkStall(time)
         update(position: time)
-        if let length = player.media?.length.intValue, length > 0 { set(\.duration, Double(length) / 1000) }
+        if player.length > 0 { set(\.duration, player.length) }
         set(\.isPlaying, player.isPlaying)
         if !appliedPreferences, player.isPlaying, !audioTracks().isEmpty {
             appliedPreferences = true
@@ -556,7 +566,7 @@ final class VodPlayerModel {
             // by itself (what reopening by hand did), and only then say it can't be played.
             if !hasPlayed, !failed { recover(at: max(position, pendingVLCJump ?? 0)) } else { set(\.failed, true) }
         case .ended: set(\.ended, true)
-        case .buffering, .opening: set(\.isBuffering, !player.isPlaying)
+        case .opening: set(\.isBuffering, !player.isPlaying)
         default: set(\.isBuffering, false)
         }
     }
@@ -641,7 +651,7 @@ final class VodPlayerModel {
                 appleStartAt = seconds // not open yet: it starts there instead
             }
         } else if player.isPlaying, player.isSeekable {
-            player.time = VLCTime(int: Int32(seconds * 1000))
+            player.jump(to: seconds)
         } else {
             // Jumping while VLC is still opening the film could leave it stuck for good (you had to
             // close and reopen it): the jump waits until the film is actually playing.
@@ -673,7 +683,7 @@ final class VodPlayerModel {
         }
         guard player.isPlaying, player.isSeekable, Date.now.timeIntervalSince(lastScrubJump) > 0.25 else { return }
         lastScrubJump = .now
-        player.time = VLCTime(int: Int32(seconds * 1000))
+        player.jump(to: seconds, fast: true)
     }
 
     /// Some provider servers stop answering after a jump (they allow one connection, and the
@@ -731,12 +741,13 @@ final class VodPlayerModel {
 
     func audioTracks() -> [Track] {
         if engine == .apple { return appleTracks(.audible) }
-        return tracks(names: player.audioTrackNames, ids: player.audioTrackIndexes, current: player.currentAudioTrackIndex)
+        let list = player.audioTracks().map { Track(id: $0.id, name: $0.name, selected: $0.selected) }
+        return list.count < 2 ? [] : list // a single track has nothing to choose between
     }
 
     func subtitleTracks() -> [Track] {
         if engine == .apple { return appleTracks(.legible) }
-        return tracks(names: player.videoSubTitlesNames, ids: player.videoSubTitlesIndexes, current: player.currentVideoSubTitleIndex)
+        return player.subtitleTracks().map { Track(id: $0.id, name: $0.name, selected: $0.selected) }
     }
 
     /// Picking a track also remembers it for the next film or episode.
@@ -780,7 +791,7 @@ final class VodPlayerModel {
 
     private func setTrack(_ id: Int32, audio: Bool) {
         if engine == .vlc {
-            if audio { player.currentAudioTrackIndex = id } else { player.currentVideoSubTitleIndex = id }
+            if audio { player.selectAudio(id) } else { player.selectSubtitle(id) }
             return
         }
         guard let item = avPlayer.currentItem, let group = appleGroup(audio ? .audible : .legible) else { return }
@@ -806,30 +817,6 @@ final class VodPlayerModel {
         // A single audio track has nothing to choose between.
         return characteristic == .audible && list.count < 2 ? [] : list
     }
-
-    private func tracks(names: [Any], ids: [Any], current: Int32) -> [Track] {
-        zip(names, ids).compactMap { name, id in
-            guard let id = (id as? NSNumber)?.int32Value else { return nil }
-            // VLC lists "Disable" as track -1.
-            let label = id == -1 ? "Off" : (name as? String ?? "Track \(id)")
-            return Track(id: id, name: label, selected: id == current)
-        }
-    }
-}
-
-/// The view VLC draws the video into.
-struct VLCVideoView: UIViewRepresentable {
-    let model: VodPlayerModel
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
-        view.isUserInteractionEnabled = false // taps belong to the controls above
-        model.player.drawable = view
-        return view
-    }
-
-    func updateUIView(_ view: UIView, context: Context) {}
 }
 
 /// Xtream providers can usually hand out a film or episode as an .m3u8 stream as well as its own

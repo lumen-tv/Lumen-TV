@@ -2,7 +2,6 @@ import AVFoundation
 import AVKit
 import Shared
 import SwiftUI
-import VLCKitSPM
 
 /// Full-screen live TV. Swipe up or down to change channel (like Up/Down on the TV remote),
 /// tap to show or hide the channel name and buttons. Leaving the app (or the Picture in Picture
@@ -12,6 +11,7 @@ struct LivePlayerView: View {
     @State private var index: Int
     @State private var model = LivePlayerModel()
     @State private var pip = PictureInPicture()
+    @State private var vlcPiP: VLCPiP?
     @State private var chromeVisible = true
     @State private var hideTask: Task<Void, Never>?
     @Environment(\.dismiss) private var dismiss
@@ -40,11 +40,11 @@ struct LivePlayerView: View {
                 model.layer = layer
                 pip.attach(layer)
             }).ignoresSafeArea()
-            if model.usesVLC {
-                // VLC's view catches touches (UIKit views win over SwiftUI's tap gesture), which
-                // stopped taps from showing the buttons on 4K channels. The video doesn't need them.
-                LiveVLCView(player: model.vlc).ignoresSafeArea().allowsHitTesting(false)
-            }
+            // Always in place (VLC needs its view before it starts), shown only for VLC channels.
+            // It ignores touches: they belong to the tap and swipe gestures.
+            VLCVideo(engine: model.vlc, pip: $vlcPiP)
+                .ignoresSafeArea()
+                .opacity(model.usesVLC ? 1 : 0)
 
             if model.isBuffering {
                 ProgressView().controlSize(.large).tint(.white)
@@ -82,6 +82,7 @@ struct LivePlayerView: View {
         }
         .onDisappear {
             pip.stop()
+            vlcPiP?.stop()
             model.stop()
             UIApplication.shared.isIdleTimerDisabled = false
         }
@@ -113,7 +114,13 @@ struct LivePlayerView: View {
                         .padding(.leading, 10)
                     }
                     Spacer()
-                    if pip.isSupported && !model.usesVLC {
+                    if model.usesVLC, let vlcPiP {
+                        CircleGlassButton(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
+                                          size: 44, fill: .black.opacity(0.35)) { vlcPiP.toggle() }
+                            .opacity(vlcPiP.isPossible ? 1 : 0.4)
+                            .disabled(!vlcPiP.isPossible)
+                            .padding(.trailing, 10)
+                    } else if pip.isSupported && !model.usesVLC {
                         CircleGlassButton(systemImage: pip.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
                                           size: 44, fill: .black.opacity(0.35)) { pip.toggle() }
                             .opacity(pip.isPossible ? 1 : 0.4)
@@ -267,9 +274,9 @@ final class LivePlayerModel {
     /// Some channels (often the 4K ones) send HEVC video that Apple's player can't show: you get
     /// the sound over a black picture, and Picture in Picture never becomes possible. When the
     /// picture hasn't appeared 1.5 s after the sound started, the channel switches to VLC, which
-    /// shows it (VLC has no Picture in Picture, so the button hides for that channel).
+    /// shows it (with VLC's own Picture in Picture).
     private(set) var usesVLC = false
-    @ObservationIgnored private(set) lazy var vlc = VLCMediaPlayer()
+    @ObservationIgnored private(set) lazy var vlc = VLCEngine()
     /// The full-screen player's video layer. Nil for the guide's muted preview, which never switches.
     @ObservationIgnored weak var layer: AVPlayerLayer?
     @ObservationIgnored private var videoCheck: Task<Void, Never>?
@@ -379,11 +386,12 @@ final class LivePlayerModel {
         usesVLC = true
         player.pause()
         player.replaceCurrentItem(with: nil)
-        let media = VLCMedia(url: url)
         // Live: a short buffer (ms) keeps it close to live while riding out small hiccups.
-        media.addOption(":network-caching=1500")
-        vlc.media = media
-        // `LiveVLCView` starts it once it has handed VLC its view (usesVLC above shows it).
+        guard vlc.open(url, options: [":network-caching=1500", ":http-reconnect"]) else {
+            error = "This channel's address can't be played."
+            return
+        }
+        vlc.play()
         isBuffering = false
         error = nil
     }
@@ -434,22 +442,6 @@ struct PlayerLayerView: UIViewRepresentable {
     func updateUIView(_ view: LayerView, context: Context) {
         view.playerLayer.player = player
     }
-}
-
-/// The view VLC draws a live channel into, when Apple's player can't show its picture.
-struct LiveVLCView: UIViewRepresentable {
-    let player: VLCMediaPlayer
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
-        view.isUserInteractionEnabled = false
-        player.drawable = view
-        player.play()
-        return view
-    }
-
-    func updateUIView(_ view: UIView, context: Context) {}
 }
 
 /// iPad: the channels you're zapping through, down the left of the live player, with what's on

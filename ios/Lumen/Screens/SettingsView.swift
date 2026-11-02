@@ -136,8 +136,11 @@ struct LicencesView: View {
             Section("Inter") {
                 Text("Typeface by Rasmus Andersson, under the SIL Open Font License 1.1.")
             }
-            Section("VLCKit") {
-                Text("Plays films and episodes. By VideoLAN and the VLC authors, under the GNU Lesser General Public License 2.1.")
+            Section("VLC") {
+                Text("libVLC plays films, episodes and some channels. By VideoLAN and the VLC authors, under the GNU Lesser General Public License 2.1.")
+            }
+            Section("SwiftVLC") {
+                Text("Connects Lumen to libVLC. By Harf Labs, under the MIT License.")
             }
         }
         .font(LumenFont.body)

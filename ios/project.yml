@@ -16,11 +16,13 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
 packages:
-  # VLC for films and episodes: plays .mkv and DTS/AC3 audio, which Apple's player can't.
-  # (A Swift Package build of the official VLCKit, LGPL 2.1.)
-  VLCKitSPM:
-    url: https://github.com/tylerjonesio/vlckit-spm
-    from: 3.6.0
+  # VLC 4 for films, episodes and channels Apple's player can't play (.mkv, DTS/AC3 sound, HEVC),
+  # with Picture in Picture. SwiftVLC wraps libVLC 4 (MIT; libVLC is LGPL 2.1). Needs Xcode 26.4+.
+  # It replaced VLCKit 3 (tylerjonesio/vlckit-spm 3.6) on 2026-11-02; only Player/VLCEngine.swift
+  # talks to it. The two can't be in one app (both contain libVLC).
+  SwiftVLC:
+    url: https://github.com/harflabs/SwiftVLC
+    from: 1.0.0
 # Run from Xcode builds the optimised (Release) app, including the shared Kotlin code: a Debug
 # build is unoptimised on both sides and felt laggy (Hayat 2026-11-02), as debug builds did on the
 # TV. To debug with breakpoints, set Run back to Debug in Product → Scheme → Edit Scheme.
@@ -42,7 +44,7 @@ targets:
     sources:
       - path: Lumen
     dependencies:
-      - package: VLCKitSPM
+      - package: SwiftVLC
     # Builds the shared Kotlin code (../shared) into Shared.framework before Swift compiles.
     preBuildScripts:
       - name: Build shared Kotlin code

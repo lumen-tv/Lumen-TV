@@ -75,8 +75,11 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     a card row at the top of Live TV, Edit sheet to reorder/remove, the player zaps within favourites.
   - Movies/Series (not yet run): `PlaylistLoader.loadVod/movieInfo/seriesInfo` (shared, tested), loaded after the channels
     for Xtream playlists. `ios/Lumen/Vod/`: tabs with Continue watching + category rows (30, See all grid), film and
-    series pages, `VodPlayerView` on VLCKit (SPM package `tylerjonesio/vlckit-spm` 3.6, LGPL; AVPlayer can't do mkv/DTS),
-    polled every 0.5 s. Progress in UserDefaults (`WatchProgress`, no stream URLs: they hold the password), saved every
+    series pages, `VodPlayerView` on VLC (AVPlayer can't do mkv/DTS),
+    polled every 0.5 s. VLC 4 since 2026-11-02 (Hayat): SwiftVLC package (harflabs/SwiftVLC 1.x, MIT, libVLC 4,
+    needs Xcode 26.4+), wrapped by `Player/VLCEngine.swift` (the only file importing it; seconds, tracks as
+    index ids with -1 = off) + `VLCVideo`/`VLCPiP` (PiP for VLC films and 4K/HEVC channels). VLCKit 3 can't
+    sit beside it (both are libVLC); to go back, restore vlckit-spm 3.6 in project.yml and rewrite that file. Progress in UserDefaults (`WatchProgress`, no stream URLs: they hold the password), saved every
     15 s and on leaving, 95% = finished, under 30 s not kept.
   - TV look (Hayat approved mockups 2026-10-31; not yet run): one app, layout by `lumenWide` (iPad + regular width).
     iPad: the TV's glass pill (search · Live TV · Movies · Series · My List · gear) + clock floating over the page

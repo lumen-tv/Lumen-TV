@@ -6,7 +6,7 @@ names and keys come from the shared Kotlin code in `shared/`, which Xcode builds
 
 ## 1. Install Xcode and XcodeGen (once)
 
-1. Install **Xcode** from the Mac App Store (free, about 15 GB). Open it once: accept the licence,
+1. Install **Xcode** from the Mac App Store (free, about 15 GB; version 26.4 or newer, which the VLC 4 package needs). Open it once: accept the licence,
    and when it asks which platforms to download, tick **iOS**.
 2. In Terminal: `brew install xcodegen`.
    XcodeGen builds `Lumen.xcodeproj` from `ios/project.yml`. The project file isn't in git: it's a
