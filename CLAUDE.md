@@ -56,6 +56,14 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     0.9.2: credits are timed back from the end of the file (DB credit length, when a source gives the end) and never
     before the last 2 min (`SkipPick.creditsStart`): the DB's copy and the provider's file differ in length (Hayat saw
     it 3 min early). Checked on the TV 2026-10-31 (intro worked).
+- **Loading screen (0.10.0).** Built on branch `claude/project-thread-lp0wnr`, same as the iPhone's. Not yet checked on the TV.
+  - `ui/components/Loading.kt`: `PlaybackLoading` covers the player until the first frame (`onRenderedFirstFrame`; audio-only
+    counts once playing): the poster's colours (`ColourWash`: 24 px copy, box-blurred on the CPU, drawn stretched; no
+    RenderEffect) drifting slowly, or for live the channel's tile colour (`rememberChannelColour`); name big in the middle,
+    episode line or what's on, "Resuming from 42:10"/"Starting", then `LoadingLine` (thin line, light sweeping through).
+    A rebuffer after the picture shows only `BufferingLine` at the bottom; the old "Loading…" texts are gone.
+    The live info overlay waits until the picture shows. Series pages open on the last season picked
+    (`Preferences.lastSeason`) when nothing in the series has been watched.
 - **Settings page (0.4.0).** Merged (PR #15). Not yet checked on the TV.
   - "Settings" pill at the end of the top tabs (blue dot while an update waits; Home's hint line says so too; the old
     "Update to …" button on Home is gone). Menu left, section right: Playlists (OK = Refresh / Rename / Change link or

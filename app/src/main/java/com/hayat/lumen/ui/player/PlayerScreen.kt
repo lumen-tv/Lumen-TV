@@ -5,6 +5,7 @@ import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -54,7 +56,10 @@ import androidx.tv.material3.Text
 import com.hayat.lumen.LocalAppContainer
 import com.hayat.lumen.data.epg.NowNext
 import com.hayat.lumen.playback.PlayerHolder
+import com.hayat.lumen.ui.components.BufferingLine
 import com.hayat.lumen.ui.components.ChannelLogo
+import com.hayat.lumen.ui.components.PlaybackLoading
+import com.hayat.lumen.ui.components.rememberChannelColour
 import com.hayat.lumen.ui.components.QualityTag
 import com.hayat.lumen.ui.components.ProgrammeProgress
 import com.hayat.lumen.ui.components.formatTime
@@ -86,6 +91,8 @@ fun PlayerScreen(channelId: Long, inFavourites: Boolean) {
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var status by remember { mutableStateOf(Status.LOADING) }
+    /** The tuned channel's picture has appeared: before that the loading screen shows, after it only the thin line. */
+    var picture by remember { mutableStateOf(false) }
     var overlay by remember { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) } // bumps restart the overlay's hide timer
     var retry by remember { mutableIntStateOf(0) }
@@ -134,6 +141,15 @@ fun PlayerScreen(channelId: Long, inFavourites: Boolean) {
                 if (state == Player.STATE_BUFFERING && status != Status.FAILED) status = Status.LOADING
             }
 
+            override fun onRenderedFirstFrame() {
+                picture = true
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                // A radio station has no picture to wait for.
+                if (isPlaying && !p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)) picture = true
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
                     p.seekToDefaultPosition()
@@ -155,13 +171,17 @@ fun PlayerScreen(channelId: Long, inFavourites: Boolean) {
         val channel = tuned?.channel ?: return@LaunchedEffect
         // Opened from Home while its preview plays this channel: keep the stream, no re-buffer.
         if (retry == 0 && p.currentMediaItem?.localConfiguration?.uri?.toString() == channel.streamUrl) {
-            if (p.playbackState == Player.STATE_READY) status = Status.PLAYING
+            if (p.playbackState == Player.STATE_READY) {
+                status = Status.PLAYING
+                picture = true
+            }
             p.playWhenReady = true
             return@LaunchedEffect
         }
         val firstTune = p.currentMediaItem == null
         p.stop()
         status = Status.LOADING
+        picture = false
         if (!firstTune) delay(ZAP_DEBOUNCE_MS)
         p.setMediaItem(PlayerHolder.mediaItem(channel.streamUrl))
         p.prepare()
@@ -195,8 +215,11 @@ fun PlayerScreen(channelId: Long, inFavourites: Boolean) {
         onDispose { view.keepScreenOn = false }
     }
 
+    // Until the picture appears the channel's loading screen covers everything; the info overlay waits.
+    val loadingScreen = !picture && status != Status.FAILED
+
     // Back hides the overlay first; with it hidden, Back falls through to navigation.
-    BackHandler(enabled = overlay) { overlay = false }
+    BackHandler(enabled = overlay && !loadingScreen) { overlay = false }
     // Declared later, so it wins while both are enabled (Compose asks the newest BackHandler first).
     BackHandler(enabled = guideOpen) { vm.closeGuide() }
 
@@ -259,8 +282,33 @@ fun PlayerScreen(channelId: Long, inFavourites: Boolean) {
             ContentFrame(player = p, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         }
 
+        // The channel's colour, name and what's on, big in the middle, until its picture appears
+        // (as on the iPhone). A hiccup later shows only the thin line along the bottom.
         AnimatedVisibility(
-            visible = overlay,
+            visible = loadingScreen,
+            enter = fadeIn(tween(0)),
+            exit = fadeOut(tween(LOADING_FADE_MS)),
+        ) {
+            // Keeps the channel it was showing while it fades out.
+            var shown by remember { mutableStateOf(tuned) }
+            var shownNow by remember { mutableStateOf(nowNext) }
+            if (loadingScreen) { shown = tuned; shownNow = nowNext }
+            shown?.let { t ->
+                val name = remember(t.channel.name) { ChannelNames.display(t.channel.name).title }
+                PlaybackLoading(
+                    artUrl = null,
+                    heading = name,
+                    colour = rememberChannelColour(t.channel.name, t.channel.logoUrl),
+                    detail = shownNow?.now?.title,
+                )
+            }
+        }
+        if (picture && status == Status.LOADING) {
+            BufferingLine(Modifier.align(Alignment.BottomCenter))
+        }
+
+        AnimatedVisibility(
+            visible = overlay && !loadingScreen,
             enter = fadeIn(LumenMotion.focus()),
             exit = fadeOut(LumenMotion.focus()),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -356,7 +404,7 @@ private fun InfoOverlay(tuned: Tuned, nowNext: NowNext?, status: Status) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     when (status) {
-                        Status.LOADING -> "Loading…"
+                        Status.LOADING -> ""
                         Status.PLAYING -> ""
                         Status.FAILED -> "Can't play this channel right now"
                     },
@@ -374,5 +422,6 @@ private fun InfoOverlay(tuned: Tuned, nowNext: NowNext?, status: Status) {
 }
 
 private const val ZAP_DEBOUNCE_MS = 350L
+private const val LOADING_FADE_MS = 400
 private const val OVERLAY_TIMEOUT_MS = 5_000L
 private const val GUIDE_TIMEOUT_MS = 12_000L

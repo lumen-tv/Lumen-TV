@@ -57,6 +57,7 @@ import com.hayat.lumen.ui.components.LumenCard
 import com.hayat.lumen.ui.components.Pills
 import com.hayat.lumen.ui.components.ProgrammeProgress
 import com.hayat.lumen.ui.components.episodeLabel
+import com.hayat.lumen.ui.components.LoadingLine
 import com.hayat.lumen.ui.theme.LumenColors
 import com.hayat.lumen.ui.theme.SafeArea
 import com.hayat.lumen.util.VodNames
@@ -139,8 +140,15 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
     val pick = remember(episodes, progress) { NextUp.pick(episodes, progress) }
     val seasons = remember(episodes) { episodes.map { it.season }.distinct() }
     var season by rememberSaveable { mutableStateOf<Int?>(null) }
-    LaunchedEffect(pick?.episode?.season) { if (season == null) season = pick?.episode?.season }
-    val shown = season ?: seasons.firstOrNull()
+    // Opens on the season you're watching; with nothing watched yet, on the one you last picked
+    // here (Hayat 2026-11-02, as on the iPhone); else the first.
+    val remembered = remember(seasons) { container.prefs.lastSeason(sourceId, seriesId)?.takeIf { it in seasons } }
+    val watching = remember(episodes, progress) { progress.any { p -> episodes.any { it.id == p.itemId } } }
+    val shown = season ?: (if (watching) pick?.episode?.season else remembered ?: pick?.episode?.season) ?: seasons.firstOrNull()
+    fun pickSeason(number: Int) {
+        container.prefs.setLastSeason(sourceId, seriesId, number)
+        season = number
+    }
 
     Ambient {
         Backdrop(hero, widthFraction = 1f, heightFraction = 1f, leftFade = 0.6f)
@@ -181,14 +189,7 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
                     LumenButton(text = "Try again", onClick = vm::load)
                 }
                 if (state is EpisodesState.Loading) {
-                    Text(
-                        "Loading episodes…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LumenColors.TextTertiary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
+                    LoadingLine(Modifier.padding(start = 12.dp).weight(1f, fill = false), maxWidth = 200.dp)
                 }
                 // The scores, big, at the right of the buttons: the episodes leave no room for a row of their own.
                 hero?.ratings?.let {
@@ -202,8 +203,8 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
                     Pills(
                         labels = seasons.map { "Season $it" },
                         selected = seasons.indexOf(shown),
-                        onSelect = { season = seasons[it] },
-                        onFocus = { season = seasons[it] },
+                        onSelect = { pickSeason(seasons[it]) },
+                        onFocus = { pickSeason(seasons[it]) },
                     )
                     Spacer(Modifier.height(4.dp))
                 }

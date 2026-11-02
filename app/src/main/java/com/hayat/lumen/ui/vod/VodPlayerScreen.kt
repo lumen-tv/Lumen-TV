@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -72,7 +73,9 @@ import com.hayat.lumen.data.skip.SkipOffer
 import com.hayat.lumen.data.skip.SkipPick
 import com.hayat.lumen.data.skip.SkipSegment
 import com.hayat.lumen.playback.PlayerHolder
+import com.hayat.lumen.ui.components.BufferingLine
 import com.hayat.lumen.ui.components.LumenListItem
+import com.hayat.lumen.ui.components.PlaybackLoading
 import com.hayat.lumen.ui.components.ProgrammeProgress
 import com.hayat.lumen.ui.theme.LumenColors
 import com.hayat.lumen.ui.theme.LumenMotion
@@ -101,6 +104,8 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
 
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var status by remember { mutableStateOf(VodStatus.LOADING) }
+    /** The picture has appeared: before that the loading screen shows, after it a hiccup shows only the thin line. */
+    var started by remember { mutableStateOf(false) }
     var playing by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -153,8 +158,13 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
                 }
             }
 
+            override fun onRenderedFirstFrame() {
+                started = true
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 playing = isPlaying
+                if (isPlaying && !p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)) started = true
                 // Pausing is a natural moment to save.
                 if (!isPlaying && p.duration > 0 && p.playbackState == Player.STATE_READY) vm.save(p.currentPosition, p.duration)
             }
@@ -182,6 +192,7 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
         val item = now ?: return@LaunchedEffect
         p.stop()
         status = VodStatus.LOADING
+        started = false
         countdown = null
         cues = emptyList()
         skipDismissed = null
@@ -257,6 +268,8 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
             position = target
         }
     }
+
+    val loadingScreen = !started && status != VodStatus.FAILED && error == null
 
     BackHandler(enabled = panel) { panel = false }
     BackHandler(enabled = offer != null && !panel && !controls) { skipDismissed = offer?.segmentStartMs }
@@ -348,8 +361,31 @@ fun VodPlayerScreen(sourceId: Long, kind: VodKind, itemId: String, seriesId: Str
             modifier = Modifier.fillMaxSize().padding(bottom = if (controls) 120.dp else 0.dp),
         )
 
+        // The film's poster colours, its name and where it starts, big in the middle, until the
+        // picture appears (as on the iPhone). A hiccup later (a jump, a slow connection) shows only
+        // the thin line along the bottom.
         AnimatedVisibility(
-            visible = controls || status != VodStatus.READY || seekTarget != null,
+            visible = loadingScreen,
+            enter = fadeIn(tween(0)),
+            exit = fadeOut(tween(LOADING_FADE_MS)),
+        ) {
+            // Keeps what it was showing while it fades out.
+            var shown by remember { mutableStateOf(now) }
+            if (loadingScreen) shown = now
+            val item = shown
+            PlaybackLoading(
+                artUrl = item?.artUrl,
+                heading = item?.title.orEmpty(),
+                detail = item?.subtitle,
+                status = item?.let { if (it.startMs > RESUME_SHOWN_MS) "Resuming from ${formatPosition(it.startMs)}" else "Starting" },
+            )
+        }
+        if (started && status == VodStatus.LOADING) {
+            BufferingLine(Modifier.align(Alignment.BottomCenter))
+        }
+
+        AnimatedVisibility(
+            visible = !loadingScreen && (controls || (status != VodStatus.READY && status != VodStatus.LOADING) || seekTarget != null),
             enter = fadeIn(LumenMotion.focus()),
             exit = fadeOut(LumenMotion.focus()),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -453,7 +489,7 @@ internal fun Controls(
             val state = when {
                 error != null -> error
                 status == VodStatus.FAILED -> "Can't play this right now. Press OK to try again."
-                status == VodStatus.LOADING -> "Loading…"
+                status == VodStatus.LOADING -> ""
                 status == VodStatus.ENDED -> ""
                 !playing && !seeking -> "Paused"
                 else -> ""
@@ -690,6 +726,9 @@ private fun audioLabel(language: String?, label: String?, channels: Int): String
 }
 
 private const val TICK_MS = 500L
+private const val LOADING_FADE_MS = 400
+/** Matches the iPhone: a start under 30 s in just says "Starting". */
+private const val RESUME_SHOWN_MS = 30_000L
 private const val SAVE_EVERY_MS = 15_000L
 private const val SEEK_SETTLE_MS = 600L
 private const val CONTROLS_TIMEOUT_MS = 5_000L
