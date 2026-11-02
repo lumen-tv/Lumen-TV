@@ -18,6 +18,8 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Loads a playlist's live channels: the entry point the iPhone app calls. Each method is a
@@ -25,6 +27,14 @@ import kotlinx.coroutines.CancellationException
  */
 class PlaylistLoader internal constructor(private val http: HttpClient) {
     private val xtream = XtreamApi(http)
+
+    /**
+     * Swift calls these from the main thread, and a suspend function keeps running there unless
+     * told otherwise: reading 35,000 films or a big TV guide then froze the app's screens while it
+     * loaded. The reading and tidying run on Kotlin's background threads instead; Swift gets the
+     * answer back on the main thread as before.
+     */
+    private suspend fun <T> offMain(block: suspend () -> T): T = withContext(Dispatchers.Default) { block() }
 
     /** An Xtream login typed in the form. */
     @Throws(Exception::class)
@@ -36,8 +46,8 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
 
     /** An M3U link. An Xtream `get.php` link is loaded through the Xtream API instead (see [isXtreamLink]). */
     @Throws(Exception::class)
-    suspend fun loadM3u(link: String): LiveLibrary {
-        XtreamServer.fromPlaylistUrl(link)?.let { return loadXtream(it) }
+    suspend fun loadM3u(link: String): LiveLibrary = offMain {
+        XtreamServer.fromPlaylistUrl(link)?.let { return@offMain loadXtream(it) }
         val url = link.trim()
         if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
             throw LoadException("That doesn't look like a web address.")
@@ -59,12 +69,12 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
         val parser = M3uParser()
         val entries = parser.entries(text.lineSequence()).filter { it.kind == EntryKind.LIVE }.toList()
         if (entries.isEmpty()) throw LoadException("No channels found in that playlist.")
-        return build(entries, categoryOrder = emptyList(), epgUrl = parser.header.epgUrl, skipped = parser.skipped)
+        return@offMain build(entries, categoryOrder = emptyList(), epgUrl = parser.header.epgUrl, skipped = parser.skipped)
     }
 
     /** Films and series for an Xtream login (M3U playlists have none). */
     @Throws(Exception::class)
-    suspend fun loadVod(server: String, username: String, password: String): VodLibrary {
+    suspend fun loadVod(server: String, username: String, password: String): VodLibrary = offMain {
         val login = XtreamServer.of(server, username, password)
             ?: throw LoadException("Enter a server address, username and password.")
         val movieCategories = xtream.categories(login, "get_vod_categories")
@@ -104,7 +114,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
                 rating = s.rating.lenient()?.toDoubleOrNull()?.takeIf { it > 0 },
             )
         }
-        return VodLibrary(
+        return@offMain VodLibrary(
             vodCategories(movieCategories, movies.groupingBy { it.categoryId }.eachCount()),
             movies,
             vodCategories(seriesCategories, series.groupingBy { it.categoryId }.eachCount()),
@@ -121,10 +131,10 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
 
     /** One film's details. */
     @Throws(Exception::class)
-    suspend fun movieInfo(server: String, username: String, password: String, movieId: String): MovieInfo {
+    suspend fun movieInfo(server: String, username: String, password: String, movieId: String): MovieInfo = offMain {
         val login = XtreamServer.of(server, username, password) ?: throw LoadException("This playlist's login is incomplete.")
         val info = xtream.movieInfo(login, movieId)
-        return MovieInfo(
+        return@offMain MovieInfo(
             plot = info?.get("plot").lenient().nonBlank() ?: info?.get("description").lenient().nonBlank(),
             genre = info?.get("genre").lenient().nonBlank(),
             director = info?.get("director").lenient().nonBlank(),
@@ -138,7 +148,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
 
     /** A series' seasons and episodes. */
     @Throws(Exception::class)
-    suspend fun seriesInfo(server: String, username: String, password: String, seriesId: String): SeriesInfo {
+    suspend fun seriesInfo(server: String, username: String, password: String, seriesId: String): SeriesInfo = offMain {
         val login = XtreamServer.of(server, username, password) ?: throw LoadException("This playlist's login is incomplete.")
         val root = xtream.seriesInfo(login, seriesId)
         val episodes = ArrayList<Episode>()
@@ -170,7 +180,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
         }
         val sorted = episodes.sortedWith(compareBy({ it.season }, { it.episode }))
         val info = root?.get("info") as? JsonObject
-        return SeriesInfo(
+        return@offMain SeriesInfo(
             seasons = sorted.map { it.season }.distinct(),
             episodes = sorted,
             cast = info?.get("cast").lenient().nonBlank(),
@@ -195,7 +205,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
     suspend fun loadGuide(url: String, tvgIds: List<String>, now: Long): Guide =
         loadGuide(url.trim(), UrlRedaction.hostOnly(url.trim()), tvgIds, now)
 
-    private suspend fun loadGuide(url: String, host: String, tvgIds: List<String>, now: Long): Guide {
+    private suspend fun loadGuide(url: String, host: String, tvgIds: List<String>, now: Long): Guide = offMain {
         val wanted = tvgIds.mapNotNullTo(HashSet()) { id -> id.trim().lowercase().takeIf { it.isNotEmpty() } }
         if (wanted.isEmpty()) throw LoadException("These channels have no guide IDs, so there's no TV guide for them.")
         val reader = XmltvReader(wanted, from = now - 2 * 3600, to = now + 36 * 3600)
@@ -233,7 +243,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
         }
         val guide = reader.finish()
         if (reader.seen == 0) throw LoadException("$host sent a TV guide Lumen couldn't read.")
-        return guide
+        return@offMain guide
     }
 
     /** True for `get.php` / `player_api.php` links, which carry an Xtream login. */
@@ -243,7 +253,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
     fun xtreamLogin(link: String): XtreamLoginParts? =
         XtreamServer.fromPlaylistUrl(link)?.let { XtreamLoginParts(it.base.toString(), it.username, it.password) }
 
-    private suspend fun loadXtream(login: XtreamServer): LiveLibrary {
+    private suspend fun loadXtream(login: XtreamServer): LiveLibrary = offMain {
         val account = xtream.account(login)
         val categories = xtream.liveCategories(login)
         val names = categories.associate { it.id to it.name }
@@ -260,7 +270,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
             )
         }
         if (entries.isEmpty()) throw LoadException("${login.host} has no live channels for this login.")
-        return build(entries, categories.map { it.name }, epgUrl = null, skipped = 0)
+        return@offMain build(entries, categories.map { it.name }, epgUrl = null, skipped = 0)
     }
 
     /** Same keys and grouping as the Android import (`LiveRepository.importEntries`). */

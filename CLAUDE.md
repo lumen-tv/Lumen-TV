@@ -267,6 +267,8 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   Tests: `./gradlew :shared:testAndroidHostTest :shared:linuxX64Test` (native run catches Kotlin/Native regex
   differences: a negated class with `\p{…}` ignores its other members, so `symbols` uses a lookahead).
   Xcode runs `ios/build-shared.sh` → `:shared:embedAndSignAppleFrameworkForXcode` (finds Homebrew Java/Android SDK).
+  `PlaylistLoader`'s loads/parsing run in `offMain` (`Dispatchers.Default`): a suspend function called from Swift
+  otherwise runs on the main thread, and reading the VOD lists or a guide froze the screens (2026-11-02).
   Cloud sessions can compile the iOS klibs (`:shared:compileKotlinIosArm64`) but can't link the framework or build Swift.
 - **iOS** (`ios/`): SwiftUI, iOS 18+, iPhone + iPad, bundle id `com.hayat.lumen`. Built on Hayat's Mac with Xcode
   (cloud sessions are Linux: they can't build or check Swift). Hayat has a paid developer account since 2026-10-31 (team id in the uncommitted
