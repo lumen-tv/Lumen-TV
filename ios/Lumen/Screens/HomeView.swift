@@ -89,7 +89,7 @@ struct HomeView: View {
             .contentTransition(.opacity)
             // Redraws on the minute so the progress line moves.
             TimelineView(.everyMinute) { context in
-                if let nowNext = store.guide(for: store.selected)?.nowNext(channel, at: context.date) {
+                if let nowNext = store.nowNext(channel, at: context.date) {
                     HeroGuideLines(nowNext: nowNext, date: context.date, wide: wide)
                 } else if let category = categoryTitle(channel, loaded) {
                     Text(category)
@@ -241,7 +241,7 @@ struct TileProgress: View {
 
     var body: some View {
         TimelineView(.everyMinute) { context in
-            if let now = store.guide(for: store.selected)?.nowNext(channel, at: context.date)?.now {
+            if let now = store.nowNext(channel, at: context.date)?.now {
                 ProgressLine(fraction: now.progress(at: context.date), height: 3, track: .white.opacity(0.3))
                     .padding(.horizontal, 14)
                     .padding(.bottom, 10)

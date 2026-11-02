@@ -21,6 +21,20 @@ packages:
   VLCKitSPM:
     url: https://github.com/tylerjonesio/vlckit-spm
     from: 3.6.0
+# Run from Xcode builds the optimised (Release) app, including the shared Kotlin code: a Debug
+# build is unoptimised on both sides and felt laggy (Hayat 2026-11-02), as debug builds did on the
+# TV. To debug with breakpoints, set Run back to Debug in Product → Scheme → Edit Scheme.
+schemes:
+  Lumen:
+    build:
+      targets:
+        Lumen: all
+    run:
+      config: Release
+    profile:
+      config: Release
+    archive:
+      config: Release
 targets:
   Lumen:
     type: application

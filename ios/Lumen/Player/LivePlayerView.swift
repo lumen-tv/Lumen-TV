@@ -138,7 +138,7 @@ struct LivePlayerView: View {
 
     /// "EastEnders · 7:30 – 8:00 PM", or "3 of 12" without a guide.
     private var programmeLine: String {
-        if let now = store.guide(for: store.selected)?.nowNext(channel)?.now {
+        if let now = store.nowNext(channel)?.now {
             return "\(now.title) · \(now.timeRange)"
         }
         return "\(index + 1) of \(channels.count)"

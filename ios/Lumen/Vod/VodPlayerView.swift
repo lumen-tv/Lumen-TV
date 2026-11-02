@@ -94,7 +94,7 @@ struct VodPlayerView: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
-                if model.isPlaying { saveProgress() }
+                if model.isPlaying { saveProgress(quietly: true) }
             }
         }
         .onChange(of: model.ended) { _, ended in
@@ -226,14 +226,14 @@ struct VodPlayerView: View {
         showControls()
     }
 
-    private func saveProgress(finished: Bool = false) {
+    private func saveProgress(finished: Bool = false, quietly: Bool = false) {
         var item = current.progress
         let duration = model.duration > 0 ? model.duration : item.duration
         guard duration > 0 || model.position > 0 else { return }
         item.duration = duration
         item.position = finished ? duration : model.position
         item.updated = .now
-        store.saveProgress(item, in: playlist)
+        store.saveProgress(item, in: playlist, quietly: quietly)
     }
 
     private func toggleControls() {

@@ -15,6 +15,10 @@ struct VodIndex {
     let seriesCategories: [VodCategory]
     let seriesByCategory: [String: [Series]]
     let seriesById: [String: Series]
+    /// Every film and series with its title as a Swift string, made once, for search (35k
+    /// Kotlin titles read on each search were slow).
+    private let movieTitles: [(title: String, movie: Movie)]
+    private let seriesTitles: [(title: String, series: Series)]
 
     init(_ vod: VodLibrary) {
         movieCategories = vod.movieCategories
@@ -23,6 +27,19 @@ struct VodIndex {
         seriesCategories = vod.seriesCategories
         seriesByCategory = Dictionary(grouping: vod.series, by: \.categoryId)
         seriesById = Dictionary(vod.series.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        movieTitles = movieById.values.map { ($0.title, $0) }
+        seriesTitles = seriesById.values.map { ($0.title, $0) }
+    }
+
+    /// Films whose title contains `text`, shortest titles first (the closest matches).
+    func searchMovies(_ text: String, limit: Int) -> [Movie] {
+        Array(movieTitles.lazy.filter { $0.title.localizedCaseInsensitiveContains(text) }.prefix(limit))
+            .sorted { $0.title.count < $1.title.count }.map(\.movie)
+    }
+
+    func searchSeries(_ text: String, limit: Int) -> [Series] {
+        Array(seriesTitles.lazy.filter { $0.title.localizedCaseInsensitiveContains(text) }.prefix(limit))
+            .sorted { $0.title.count < $1.title.count }.map(\.series)
     }
 }
 

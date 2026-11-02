@@ -187,14 +187,8 @@ struct PosterImage: View {
     var body: some View {
         GeometryReader { geo in
             if let url, let parsed = URL(string: url) {
-                AsyncImage(url: parsed) { phase in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .clipped()
-                    } else {
-                        NameTile(title: title, height: min(geo.size.width * 0.6, geo.size.height))
-                    }
+                CachedImage(url: parsed) {
+                    NameTile(title: title, height: min(geo.size.width * 0.6, geo.size.height))
                 }
             } else {
                 NameTile(title: title, height: min(geo.size.width * 0.6, geo.size.height))
@@ -294,13 +288,19 @@ struct VodGridView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: wide ? 150 : 108), spacing: 12, alignment: .top)], spacing: 18) {
                 if case .loaded(let index) = store.vodState(of: playlist) {
                     if route.kind == .movies {
-                        ForEach(filter(index.moviesByCategory[route.category.id] ?? [], \.title), id: \.id) { movie in
+                        let items = filter(index.moviesByCategory[route.category.id] ?? [], \.title)
+                        // Positions as ids: reading thousands of ids goes through Kotlin on each redraw.
+                        ForEach(items.indices, id: \.self) { i in
+                            let movie = items[i]
                             NavigationLink(value: movie) {
                                 Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
                             }
                         }
                     } else {
-                        ForEach(filter(index.seriesByCategory[route.category.id] ?? [], \.title), id: \.id) { show in
+                        let items = filter(index.seriesByCategory[route.category.id] ?? [], \.title)
+                        // Positions as ids: reading thousands of ids goes through Kotlin on each redraw.
+                        ForEach(items.indices, id: \.self) { i in
+                            let show = items[i]
                             NavigationLink(value: show) {
                                 Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
                             }

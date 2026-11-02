@@ -107,13 +107,11 @@ struct SearchView: View {
         guard text.count >= 2, let playlist = store.selected else { return Results() }
         var results = Results()
         if let loaded {
-            results.channels = Array(loaded.library.channels.lazy.filter { $0.title.localizedCaseInsensitiveContains(text) }.prefix(20))
+            results.channels = loaded.search(text, limit: 20)
         }
         if case .loaded(let index) = store.vodState(of: playlist) {
-            results.movies = Array(index.movieById.values.lazy.filter { $0.title.localizedCaseInsensitiveContains(text) }.prefix(40))
-                .sorted { $0.title.count < $1.title.count }
-            results.series = Array(index.seriesById.values.lazy.filter { $0.title.localizedCaseInsensitiveContains(text) }.prefix(40))
-                .sorted { $0.title.count < $1.title.count }
+            results.movies = index.searchMovies(text, limit: 40)
+            results.series = index.searchSeries(text, limit: 40)
         }
         return results
     }

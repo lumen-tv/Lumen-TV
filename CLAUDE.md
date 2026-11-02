@@ -113,6 +113,12 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     categoryLabels) to `NSUbiquitousKeyValueStore` (entitlement only in `project-icloud.yml`, used by generate.sh when
     Local.xcconfig has `LUMEN_ICLOUD = YES`: a Personal Team can't sign it); logins + OMDb key are synchronizable
     Keychain items (iCloud Keychain). A playlist arriving from the other device loads via `loadAll()`.
+  - Smoothness (2026-11-02, Hayat found it laggy; not yet run): Xcode's Run uses **Release** (scheme in `project.yml`;
+    Debug is unoptimised Swift + Kotlin). Posters/backdrops via `CachedImage`/`ImagePipeline` (memory + disk cache,
+    ImageIO downsampling off the main thread), never `AsyncImage`. Kotlin lists/strings are read once into Swift
+    (`LoadedLibrary.channels/search`, `VodIndex.searchMovies/searchSeries`), built in the background; long `ForEach`es
+    use positions as ids. `store.nowNext` caches the guide per channel per minute. Playback's 15 s progress saves are
+    `quietly` (disk only; pages update on pause/leave), so hidden tabs don't redraw during playback.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

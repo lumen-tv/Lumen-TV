@@ -9,6 +9,9 @@ struct LiveChannelsView: View {
     @Environment(\.lumenWide) private var wide
     @State private var category: String?
     @State private var search = ""
+    /// Search matches, worked out after a short pause in typing rather than on every key.
+    @State private var found: [LiveChannel] = []
+    @State private var foundFor = ""
     @State private var playing: PlayerRoute?
 
     var body: some View {
@@ -32,7 +35,7 @@ struct LiveChannelsView: View {
         let chosen = category ?? categories.first?.key
         let channels: [LiveChannel] = search.isEmpty
             ? loaded.channelsByCategory[chosen ?? ""] ?? []
-            : Array(loaded.library.channels.filter { $0.title.localizedCaseInsensitiveContains(search) }.prefix(300))
+            : found
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 Text("All channels")
@@ -62,7 +65,7 @@ struct LiveChannelsView: View {
             }
             List {
                 ChannelRows(channels: channels, playing: $playing, showCategory: !search.isEmpty, loaded: loaded)
-                if channels.isEmpty {
+                if channels.isEmpty, search.isEmpty || foundFor == search {
                     Text(search.isEmpty ? "No channels in this category." : "No channels match.")
                         .font(LumenFont.body)
                         .foregroundStyle(LumenColors.textSecondary)
@@ -73,7 +76,15 @@ struct LiveChannelsView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .contentMargins(.horizontal, wide ? 36 : 8, for: .scrollContent)
-            .id(chosen) // a new category starts at the top
+            .id(search.isEmpty ? chosen : "search") // a new category starts at the top
+        }
+        .task(id: search) {
+            let text = search.trimmingCharacters(in: .whitespaces)
+            guard !text.isEmpty else { found = []; foundFor = search; return }
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            found = loaded.search(text, limit: 300)
+            foundFor = search
         }
     }
 
@@ -147,8 +158,10 @@ struct ChannelRows: View {
     @Environment(PlaylistStore.self) private var store
 
     var body: some View {
-        let guide = store.guide(for: store.selected)
-        ForEach(Array(channels.enumerated()), id: \.element.key) { index, channel in
+        // Ids are positions, not channel keys: reading every key goes through Kotlin, and a long
+        // category has thousands. (Each list is redrawn from the top when the category changes.)
+        ForEach(channels.indices, id: \.self) { index in
+            let channel = channels[index]
             Button {
                 playing = PlayerRoute(channels: channels, index: index)
             } label: {
@@ -159,7 +172,7 @@ struct ChannelRows: View {
                             Text(channel.title).font(LumenFont.headline).lineLimit(1)
                             if let quality = channel.quality { QualityTag(text: quality) }
                         }
-                        if let now = guide?.nowNext(channel)?.now {
+                        if let now = store.nowNext(channel)?.now {
                             Text(now.title).font(LumenFont.inter(14)).foregroundStyle(.secondary).lineLimit(1)
                             ProgressLine(fraction: now.progress(at: .now), height: 3, track: .gray.opacity(0.35))
                                 .frame(width: 110)

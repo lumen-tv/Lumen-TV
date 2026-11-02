@@ -30,19 +30,37 @@ struct LoadedLibrary {
     let categories: [LiveCategory]
     let channelsByCategory: [String: [LiveChannel]]
     let byKey: [String: LiveChannel]
+    /// `library.channels` as a Swift array, made once: each read of the Kotlin list (and of a
+    /// channel's name) crosses into Kotlin and copies the text, which added up in long lists.
+    let channels: [LiveChannel]
+    /// The channels' names as Swift strings, in the same order, for search.
+    private let titles: [String]
 
     /// Channels the provider didn't put in any category.
     static let otherKey = "\u{0}other"
 
     init(_ library: LiveLibrary) {
         self.library = library
+        let channels = library.channels
+        self.channels = channels
+        titles = channels.map(\.title)
         var byCategory = [String: [LiveChannel]]()
-        for channel in library.channels {
+        for channel in channels {
             byCategory[channel.categoryName ?? Self.otherKey, default: []].append(channel)
         }
         channelsByCategory = byCategory
-        byKey = Dictionary(library.channels.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        byKey = Dictionary(channels.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
         categories = library.categories
+    }
+
+    /// Channels whose name contains `text` (any case), in playlist order, at most `limit`.
+    func search(_ text: String, limit: Int) -> [LiveChannel] {
+        var found: [LiveChannel] = []
+        for (i, title) in titles.enumerated() where title.localizedCaseInsensitiveContains(text) {
+            found.append(channels[i])
+            if found.count == limit { break }
+        }
+        return found
     }
 }
 
@@ -70,13 +88,22 @@ final class PlaylistStore {
 
     /// The TV guide per playlist, loaded after the channels (from the panel's xmltv.php, or the
     /// M3U's url-tvg). Kept in memory only for now: it reloads at each launch.
-    private(set) var guideStates: [UUID: GuideState] = [:]
+    private(set) var guideStates: [UUID: GuideState] = [:] {
+        didSet { nowNextCache.removeAll() }
+    }
 
     /// Films and series per playlist (Xtream only), loaded after the channels.
     private(set) var vodStates: [UUID: VodState] = [:]
     /// Where you stopped in films and episodes, per playlist, keyed `m:<id>` / `e:<id>`.
     private(set) var progress: [UUID: [String: WatchProgress]] = [:]
     private let progressKey = "watchProgress"
+    /// Positions saved while a film plays (every 15 s) that pages haven't been shown yet. They're
+    /// written to disk at once but only reach `progress` when playback pauses or stops: changing
+    /// `progress` redraws every page that shows progress (even tabs out of sight), and doing that
+    /// every 15 s during playback could make the video stutter.
+    @ObservationIgnored private var unpublishedProgress: [UUID: [String: WatchProgress]] = [:]
+    /// The guide's now/next per channel, worked out at most once a minute (see `nowNext`).
+    @ObservationIgnored private var nowNextCache: [String: (minute: Int64, value: NowNext?)] = [:]
     /// Films and series saved to My List, per playlist, newest first (provider ids survive refreshes).
     private(set) var myList: [UUID: [MyListItem]] = [:]
     private let myListKey = "myList"
@@ -122,7 +149,7 @@ final class PlaylistStore {
         }
         if let saved = read(defaultsKey, [Playlist].self) { playlists = saved }
         if let saved = read(favouritesKey, [UUID: [String]].self) { favouriteKeys = saved }
-        if let saved = read(progressKey, [UUID: [String: WatchProgress]].self) { progress = saved }
+        if let saved = read(progressKey, [UUID: [String: WatchProgress]].self) { progress = saved; unpublishedProgress = [:] }
         if let saved = read(hiddenKey, [UUID: Set<String>].self) { hiddenCategories = saved }
         if let saved = read(labelsKey, [UUID: [String: String]].self) { categoryLabels = saved }
         if let saved = read(myListKey, [UUID: [MyListItem]].self) { myList = saved }
@@ -146,14 +173,16 @@ final class PlaylistStore {
     func loadAll() async {
         for playlist in playlists {
             let id = playlist.id
-            if isIdle(playlist), let live = await Self.background({ LibraryCache.shared.loadLive(path: Self.cachePath(id, "live")) }) {
-                states[id] = .loaded(LoadedLibrary(live))
+            // The lookup tables (`LoadedLibrary`, `VodIndex`) are built in the background too:
+            // tens of thousands of films took a noticeable moment on the main thread.
+            if isIdle(playlist), let live = await Self.background({ LibraryCache.shared.loadLive(path: Self.cachePath(id, "live")).map(LoadedLibrary.init) }) {
+                states[id] = .loaded(live)
             }
             if guideStates[id] == nil, let guide = await Self.background({ LibraryCache.shared.loadGuide(path: Self.cachePath(id, "guide")) }) {
                 guideStates[id] = .loaded(guide)
             }
-            if vodStates[id] == nil, let vod = await Self.background({ LibraryCache.shared.loadVod(path: Self.cachePath(id, "vod")) }) {
-                vodStates[id] = .loaded(VodIndex(vod))
+            if vodStates[id] == nil, let vod = await Self.background({ LibraryCache.shared.loadVod(path: Self.cachePath(id, "vod")).map(VodIndex.init) }) {
+                vodStates[id] = .loaded(vod)
             }
         }
         for playlist in playlists where isIdle(playlist) || Self.isStale(playlist.id, "live", hours: 12) {
@@ -223,7 +252,8 @@ final class PlaylistStore {
         if !hadData { states[playlist.id] = .loading }
         do {
             let library = try await load(login)
-            states[playlist.id] = .loaded(LoadedLibrary(library))
+            let built = await Self.background { LoadedLibrary(library) }
+            states[playlist.id] = .loaded(built)
             saveCache(playlist.id, "live") { try LibraryCache.shared.saveLive(library: library, path: $0) }
         } catch {
             if !hadData { states[playlist.id] = .failed(Self.message(for: error)) }
@@ -259,12 +289,13 @@ final class PlaylistStore {
         } catch {
             throw PlaylistError(message: Self.message(for: error))
         }
+        let built = await Self.background { LoadedLibrary(library) }
         let host = Self.host(of: login)
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let playlist = Playlist(id: UUID(), name: trimmed.isEmpty ? host : trimmed, kind: kind, host: host)
         store(login, for: playlist)
         playlists.append(playlist)
-        states[playlist.id] = .loaded(LoadedLibrary(library))
+        states[playlist.id] = .loaded(built)
         saveCache(playlist.id, "live") { try LibraryCache.shared.saveLive(library: library, path: $0) }
         selectedID = playlist.id
         save()
@@ -279,6 +310,7 @@ final class PlaylistStore {
         vodStates[playlist.id] = nil
         guideStates[playlist.id] = nil
         progress[playlist.id] = nil
+        unpublishedProgress[playlist.id] = nil
         saveProgress()
         myList[playlist.id] = nil
         saveMyList()
@@ -341,6 +373,20 @@ final class PlaylistStore {
         return guide
     }
 
+    /// What's on now and next on a channel of the selected playlist. Rows ask for this on every
+    /// redraw, so the answer from the guide (Kotlin code) is kept for the rest of the minute.
+    func nowNext(_ channel: LiveChannel, at date: Date = .now) -> NowNext? {
+        guard let playlist = selected, let guide = guide(for: playlist) else { return nil }
+        guard let tvgId = channel.tvgId else { return nil }
+        let minute = Int64(date.timeIntervalSince1970) / 60
+        let key = playlist.id.uuidString + "|" + tvgId
+        if let hit = nowNextCache[key], hit.minute == minute { return hit.value }
+        let value = guide.nowNext(tvgId: tvgId, now: Int64(date.timeIntervalSince1970))
+        if nowNextCache.count > 5000 { nowNextCache.removeAll() }
+        nowNextCache[key] = (minute, value)
+        return value
+    }
+
     func loadGuide(_ playlist: Playlist) async {
         guard case .loaded(let loaded) = state(of: playlist) else { return }
         let ids = loaded.library.channels.compactMap(\.tvgId)
@@ -381,7 +427,8 @@ final class PlaylistStore {
         if !hadVod { vodStates[playlist.id] = .loading }
         do {
             let vod = try await loader.loadVod(server: creds.server, username: creds.username, password: creds.password)
-            vodStates[playlist.id] = .loaded(VodIndex(vod))
+            let built = await Self.background { VodIndex(vod) }
+            vodStates[playlist.id] = .loaded(built)
             saveCache(playlist.id, "vod") { try LibraryCache.shared.saveVod(library: vod, path: $0) }
         } catch {
             if !hadVod { vodStates[playlist.id] = .failed(Self.message(for: error)) }
@@ -482,13 +529,14 @@ final class PlaylistStore {
         } catch {
             throw PlaylistError(message: Self.message(for: error))
         }
+        let built = await Self.background { LoadedLibrary(library) }
         store(login, for: playlist)
         if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
             playlists[index].kind = kind
             playlists[index].host = Self.host(of: login)
             save()
         }
-        states[playlist.id] = .loaded(LoadedLibrary(library))
+        states[playlist.id] = .loaded(built)
         saveCache(playlist.id, "live") { try LibraryCache.shared.saveLive(library: library, path: $0) }
         guideStates[playlist.id] = nil
         vodStates[playlist.id] = nil
@@ -607,14 +655,22 @@ final class PlaylistStore {
 
     func progress(_ key: String, in playlist: Playlist) -> WatchProgress? { progress[playlist.id]?[key] }
 
-    /// Saves where playback is. Like the TV: under 30 s isn't worth keeping.
-    func saveProgress(_ item: WatchProgress, in playlist: Playlist) {
-        guard item.position >= 30 || progress[playlist.id]?[item.key] != nil else { return }
-        progress[playlist.id, default: [:]][item.key] = item
+    /// Saves where playback is. Like the TV: under 30 s isn't worth keeping. `quietly`: the
+    /// periodic save during playback, kept from the pages until the next normal save.
+    func saveProgress(_ item: WatchProgress, in playlist: Playlist, quietly: Bool = false) {
+        guard item.position >= 30 || progress[playlist.id]?[item.key] != nil
+            || unpublishedProgress[playlist.id]?[item.key] != nil else { return }
+        if quietly {
+            unpublishedProgress[playlist.id, default: [:]][item.key] = item
+        } else {
+            unpublishedProgress[playlist.id]?[item.key] = nil
+            progress[playlist.id, default: [:]][item.key] = item
+        }
         saveProgress()
     }
 
     func removeProgress(_ key: String, in playlist: Playlist) {
+        unpublishedProgress[playlist.id]?[key] = nil
         progress[playlist.id]?[key] = nil
         saveProgress()
     }
@@ -630,7 +686,11 @@ final class PlaylistStore {
     }
 
     private func saveProgress() {
-        if let data = try? JSONEncoder().encode(progress) {
+        var all = progress
+        for (id, items) in unpublishedProgress {
+            all[id, default: [:]].merge(items) { _, newer in newer }
+        }
+        if let data = try? JSONEncoder().encode(all) {
             CloudSync.shared.set(data, forKey: progressKey)
         }
     }

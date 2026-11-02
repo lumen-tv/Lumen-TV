@@ -113,11 +113,7 @@ struct PageBackdrop: View {
                 .frame(width: screen.width, height: height)
                 .overlay {
                     if let parsed = URL(string: url) {
-                        AsyncImage(url: parsed) { phase in
-                            if let image = phase.image {
-                                image.resizable().scaledToFill()
-                            }
-                        }
+                        CachedImage(url: parsed) { Color.clear }
                     }
                 }
                 .overlay {
