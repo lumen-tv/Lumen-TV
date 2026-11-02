@@ -185,15 +185,21 @@ final class PlaylistStore {
                 vodStates[id] = .loaded(vod)
             }
         }
-        for playlist in playlists where isIdle(playlist) || Self.isStale(playlist.id, "live", hours: 12) {
-            await refresh(playlist)
-        }
-        // The guide alongside films and series (each waits on the network, not on the other).
-        for playlist in playlists where guideStates[playlist.id] == nil || Self.isStale(playlist.id, "guide", hours: 12) {
-            Task { await loadGuide(playlist) }
-        }
-        for playlist in playlists where vodStates[playlist.id] == nil || Self.isStale(playlist.id, "vod", hours: 24) {
-            await loadVod(playlist)
+        // Channels (then the guide, which needs them) and films/series all at once: films used to
+        // wait for the channels to finish first.
+        await withTaskGroup(of: Void.self) { group in
+            for playlist in playlists {
+                let live = isIdle(playlist) || Self.isStale(playlist.id, "live", hours: 12)
+                group.addTask { @MainActor in
+                    if live { await self.refresh(playlist) }
+                    if self.guideStates[playlist.id] == nil || Self.isStale(playlist.id, "guide", hours: 12) {
+                        await self.loadGuide(playlist)
+                    }
+                }
+                if vodStates[playlist.id] == nil || Self.isStale(playlist.id, "vod", hours: 24) {
+                    group.addTask { @MainActor in await self.loadVod(playlist) }
+                }
+            }
         }
     }
 
@@ -435,28 +441,75 @@ final class PlaylistStore {
         }
     }
 
+    /// A film's details. Kept on the phone too (for a week), so a page seen before opens at once,
+    /// even after a relaunch; an old copy is still used when the provider doesn't answer.
     func movieInfo(_ movie: Movie, in playlist: Playlist) async throws -> MovieInfo {
         if let cached = movieInfoCache[movie.id] { return cached }
+        let path = Self.detailsPath(playlist.id, "m", movie.id)
+        let saved = await Self.background { LibraryCache.shared.loadMovieInfo(path: path) }
+        if let saved, !Self.isOld(path, hours: 24 * 7) {
+            movieInfoCache[movie.id] = saved
+            return saved
+        }
         guard let creds = xtreamLogin(for: playlist) else { throw PlaylistError(message: "No login.") }
         do {
             let info = try await loader.movieInfo(server: creds.server, username: creds.username, password: creds.password, movieId: movie.id)
             movieInfoCache[movie.id] = info
+            Task.detached(priority: .utility) { try? LibraryCache.shared.saveMovieInfo(info: info, path: path) }
+            return info
+        } catch {
+            if let saved { return saved }
+            throw PlaylistError(message: Self.message(for: error))
+        }
+    }
+
+    /// A series' seasons and episodes. Kept on the phone for 6 hours (new episodes appear), and
+    /// an old copy is shown at once while a fresh one loads (`refreshed` gets it).
+    func seriesInfo(_ series: Series, in playlist: Playlist, refreshed: ((SeriesInfo) -> Void)? = nil) async throws -> SeriesInfo {
+        if let cached = seriesInfoCache[series.id] { return cached }
+        let path = Self.detailsPath(playlist.id, "s", series.id)
+        let saved = await Self.background { LibraryCache.shared.loadSeriesInfo(path: path) }
+        guard let creds = xtreamLogin(for: playlist) else {
+            if let saved { return saved }
+            throw PlaylistError(message: "No login.")
+        }
+        let fetch: () async throws -> SeriesInfo = { [loader] in
+            try await loader.seriesInfo(server: creds.server, username: creds.username, password: creds.password, seriesId: series.id)
+        }
+        if let saved {
+            seriesInfoCache[series.id] = saved
+            if Self.isOld(path, hours: 6) {
+                Task {
+                    guard let fresh = try? await fetch() else { return }
+                    seriesInfoCache[series.id] = fresh
+                    Task.detached(priority: .utility) { try? LibraryCache.shared.saveSeriesInfo(info: fresh, path: path) }
+                    refreshed?(fresh)
+                }
+            }
+            return saved
+        }
+        do {
+            let info = try await fetch()
+            seriesInfoCache[series.id] = info
+            Task.detached(priority: .utility) { try? LibraryCache.shared.saveSeriesInfo(info: info, path: path) }
             return info
         } catch {
             throw PlaylistError(message: Self.message(for: error))
         }
     }
 
-    func seriesInfo(_ series: Series, in playlist: Playlist) async throws -> SeriesInfo {
-        if let cached = seriesInfoCache[series.id] { return cached }
-        guard let creds = xtreamLogin(for: playlist) else { throw PlaylistError(message: "No login.") }
-        do {
-            let info = try await loader.seriesInfo(server: creds.server, username: creds.username, password: creds.password, seriesId: series.id)
-            seriesInfoCache[series.id] = info
-            return info
-        } catch {
-            throw PlaylistError(message: Self.message(for: error))
-        }
+    /// `Library/Caches/Lumen/details/<playlist>-m-<id>.json` (films) or `-s-` (series).
+    nonisolated static func detailsPath(_ id: UUID, _ kind: String, _ itemId: String) -> String {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Lumen/details", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let safe = itemId.filter { $0.isLetter || $0.isNumber }
+        return dir.appendingPathComponent("\(id.uuidString)-\(kind)-\(safe).json").path
+    }
+
+    nonisolated static func isOld(_ path: String, hours: Double) -> Bool {
+        guard let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return true }
+        return Date.now.timeIntervalSince(modified) > hours * 3600
     }
 
     private struct XtreamCredentials {

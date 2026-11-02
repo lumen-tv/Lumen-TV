@@ -38,6 +38,15 @@ object LibraryCache {
     fun saveGuide(guide: Guide, path: String) = write(path, GuideFile.serializer(), GuideFile(guide.byChannel))
     fun loadGuide(path: String): Guide? = read(path, GuideFile.serializer())?.let { Guide(it.byChannel) }
 
+    /** A film's or series' details (`get_vod_info` / `get_series_info`), so its page opens at once. */
+    @Throws(Exception::class)
+    fun saveMovieInfo(info: MovieInfo, path: String) = write(path, MovieInfo.serializer(), info)
+    fun loadMovieInfo(path: String): MovieInfo? = read(path, MovieInfo.serializer())
+
+    @Throws(Exception::class)
+    fun saveSeriesInfo(info: SeriesInfo, path: String) = write(path, SeriesInfo.serializer(), info)
+    fun loadSeriesInfo(path: String): SeriesInfo? = read(path, SeriesInfo.serializer())
+
     private fun <T> write(path: String, serializer: KSerializer<T>, value: T) {
         val target = Path(path)
         val temp = Path("$path.tmp")

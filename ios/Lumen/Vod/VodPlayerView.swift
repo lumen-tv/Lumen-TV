@@ -16,6 +16,8 @@ struct VodPlayerView: View {
     @Environment(PlaylistStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var model = VodPlayerModel()
+    /// Swipe down to close: how far the picture has been pulled down.
+    @State private var pull: CGFloat = 0
     @State private var pip = PictureInPicture()
     @State private var current: VodPlayback
     @State private var queue: [VodPlayback]
@@ -67,16 +69,36 @@ struct VodPlayerView: View {
                     .glass(fill: .black.opacity(0.6))
             }
             if controlsVisible { controls.transition(.opacity) }
-            if let offer = skipOffer {
-                skipButton(offer)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 24)
-                    // Above the bottom panel when the controls are up.
-                    .padding(.bottom, controlsVisible ? 150 : 32)
-                    .transition(.opacity)
+            SkipLayer(model: model, skips: skips, hasNext: !queue.isEmpty, scrubbing: scrubbing,
+                      dismissed: $skipDismissed, controlsVisible: controlsVisible) { offer in
+                if let target = offer.target {
+                    model.seek(to: target)
+                } else {
+                    saveProgress(finished: true) // the credits count as watched
+                    playNext()
+                }
             }
         }
-        .animation(.easeOut(duration: 0.18), value: skipOffer)
+        // Swipe down to close, as in Apple's own players: the picture follows the finger, and
+        // letting go far enough closes it (otherwise it springs back).
+        .offset(y: pull)
+        .scaleEffect(1 - min(pull, 400) / 2000)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 24)
+                .onChanged { drag in
+                    guard scrubbing == nil, drag.translation.height > 0,
+                          drag.translation.height > abs(drag.translation.width) else { return }
+                    pull = drag.translation.height
+                }
+                .onEnded { drag in
+                    if pull > 140 || (pull > 40 && drag.predictedEndTranslation.height > 400) {
+                        dismiss()
+                    } else {
+                        withAnimation(.spring(duration: 0.3)) { pull = 0 }
+                    }
+                }
+        )
+        .landscapeVideo()
         .statusBarHidden(!controlsVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
@@ -152,27 +174,7 @@ struct VodPlayerView: View {
             Spacer()
 
             VStack(spacing: 6) {
-                Slider(
-                    value: Binding(
-                        get: { scrubbing ?? model.position },
-                        set: { scrubbing = $0; showControls() }
-                    ),
-                    in: 0...max(model.duration, 1),
-                    onEditingChanged: { editing in
-                        if !editing, let target = scrubbing {
-                            model.seek(to: target)
-                            scrubbing = nil
-                        }
-                    }
-                )
-                .tint(.white)
-                HStack {
-                    Text(formatTime(scrubbing ?? model.position))
-                    Spacer()
-                    Text("-" + formatTime(max(0, model.duration - (scrubbing ?? model.position))))
-                }
-                .font(LumenFont.caption)
-                .foregroundStyle(LumenColors.textSecondary)
+                ScrubBar(model: model, scrubbing: $scrubbing, touched: showControls)
                 if !queue.isEmpty {
                     Button {
                         saveProgress()
@@ -190,33 +192,6 @@ struct VodPlayerView: View {
         }
     }
 
-    private var skipOffer: SkipOffer? {
-        guard !model.failed, scrubbing == nil,
-              let offer = SkipPick.at(skips, position: model.position, duration: model.duration, hasNext: !queue.isEmpty),
-              offer.segmentStart != skipDismissed else { return nil }
-        return offer
-    }
-
-    /// White pill like the TV's. Tap skips; swipe it away to hide it.
-    private func skipButton(_ offer: SkipOffer) -> some View {
-        Button {
-            if let target = offer.target {
-                model.seek(to: target)
-            } else {
-                saveProgress(finished: true) // the credits count as watched
-                playNext()
-            }
-        } label: {
-            Label(offer.label, systemImage: "forward.end.fill")
-                .font(LumenFont.body.weight(.semibold))
-                .foregroundStyle(.black)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(.white))
-        }
-        .buttonStyle(.plain)
-        .simultaneousGesture(DragGesture(minimumDistance: 20).onEnded { _ in skipDismissed = offer.segmentStart })
-    }
 
     private func playNext() {
         guard let next = queue.first else { return }
@@ -253,6 +228,91 @@ struct VodPlayerView: View {
             guard !Task.isCancelled, model.isPlaying, scrubbing == nil else { return }
             withAnimation(.easeOut(duration: 0.3)) { controlsVisible = false }
         }
+    }
+}
+
+/// The progress bar and times. Its own view because it reads the position, which changes twice
+/// a second: only this part redraws then, not the whole player. While you drag, the picture
+/// follows your finger (`VodPlayerModel.scrub`); letting go lands exactly there.
+struct ScrubBar: View {
+    let model: VodPlayerModel
+    @Binding var scrubbing: Double?
+    let touched: () -> Void
+
+    var body: some View {
+        let shown = scrubbing ?? model.position
+        VStack(spacing: 6) {
+            Slider(
+                value: Binding(
+                    get: { shown },
+                    set: { value in
+                        scrubbing = value
+                        model.scrub(to: value)
+                        touched()
+                    }
+                ),
+                in: 0...max(model.duration, 1),
+                onEditingChanged: { editing in
+                    if !editing, let target = scrubbing {
+                        model.seek(to: target)
+                        scrubbing = nil
+                    }
+                }
+            )
+            .tint(.white)
+            HStack {
+                Text(formatTime(shown))
+                    .font(scrubbing == nil ? LumenFont.caption : LumenFont.inter(15, .semibold))
+                    .foregroundStyle(scrubbing == nil ? LumenColors.textSecondary : LumenColors.textPrimary)
+                Spacer()
+                Text("-" + formatTime(max(0, model.duration - shown)))
+            }
+            .font(LumenFont.caption)
+            .foregroundStyle(LumenColors.textSecondary)
+            .monospacedDigit()
+        }
+    }
+}
+
+/// "Skip intro" / "Skip recap" / "Next episode": a white pill like the TV's, bottom right. Tap
+/// skips; swipe it away to hide it. Its own view for the same reason as `ScrubBar`.
+struct SkipLayer: View {
+    let model: VodPlayerModel
+    let skips: [SkipSegment]
+    let hasNext: Bool
+    let scrubbing: Double?
+    @Binding var dismissed: Double?
+    let controlsVisible: Bool
+    let action: (SkipOffer) -> Void
+
+    var body: some View {
+        ZStack {
+            if let offer {
+                Button { action(offer) } label: {
+                    Label(offer.label, systemImage: "forward.end.fill")
+                        .font(LumenFont.body.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(.white))
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(DragGesture(minimumDistance: 20).onEnded { _ in dismissed = offer.segmentStart })
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, 24)
+                // Above the bottom panel when the controls are up.
+                .padding(.bottom, controlsVisible ? 150 : 32)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: offer)
+    }
+
+    private var offer: SkipOffer? {
+        guard !model.failed, scrubbing == nil, !skips.isEmpty,
+              let offer = SkipPick.at(skips, position: model.position, duration: model.duration, hasNext: hasNext),
+              offer.segmentStart != dismissed else { return nil }
+        return offer
     }
 }
 
@@ -319,6 +379,13 @@ final class VodPlayerModel {
     private(set) var failed = false
     private(set) var ended = false
     @ObservationIgnored private var timer: Timer?
+    /// After a jump, the players report the old time for a moment; the bar holds the target
+    /// until they catch up, instead of snapping back and forth.
+    @ObservationIgnored private var seekHold: (target: Double, until: Date)?
+    /// Dragging the bar: the last live jump (VLC), and Apple's jump in flight plus the next one.
+    @ObservationIgnored private var lastScrubJump = Date.distantPast
+    @ObservationIgnored private var appleSeeking = false
+    @ObservationIgnored private var appleScrubNext: Double?
     /// Whether the remembered audio/subtitle language has been picked for this film yet.
     @ObservationIgnored private var appliedPreferences = false
 
@@ -378,28 +445,44 @@ final class VodPlayerModel {
         engine = .vlc
         let media = VLCMedia(url: parsed)
         if seconds > 1 { media.addOption(":start-time=\(Int(seconds))") }
-        // A bigger network buffer (ms) smooths over slow provider servers.
-        media.addOption(":network-caching=3000")
+        // A network buffer (ms) to ride out slow provider servers. It's also how long a film takes
+        // to start (and to resume after a jump): 3 s felt slow, 1.5 s still rides out hiccups.
+        media.addOption(":network-caching=1500")
         player.media = media
         resetState(at: seconds)
         player.play()
     }
 
+    // Each value is only set when it changes: setting an @Observable property redraws whatever
+    // reads it even when the value is the same, which redrew the player twice a second.
+
+    private func update(position time: Double) {
+        guard time > 0 else { return }
+        if let hold = seekHold {
+            if abs(time - hold.target) > 3, Date.now < hold.until { return }
+            seekHold = nil
+        }
+        if abs(time - position) >= 0.25 { position = time }
+    }
+
+    private func set<T: Equatable>(_ path: ReferenceWritableKeyPath<VodPlayerModel, T>, _ value: T) {
+        if self[keyPath: path] != value { self[keyPath: path] = value }
+    }
+
     private func poll() {
         if engine == .apple { pollApple(); return }
-        let time = Double(player.time.intValue) / 1000
-        if time > 0 { position = time }
-        if let length = player.media?.length.intValue, length > 0 { duration = Double(length) / 1000 }
-        isPlaying = player.isPlaying
+        update(position: Double(player.time.intValue) / 1000)
+        if let length = player.media?.length.intValue, length > 0 { set(\.duration, Double(length) / 1000) }
+        set(\.isPlaying, player.isPlaying)
         if !appliedPreferences, player.isPlaying, !audioTracks().isEmpty {
             appliedPreferences = true
             applyPreferences()
         }
         switch player.state {
-        case .error: failed = true
-        case .ended: if !ended { ended = true }
-        case .buffering, .opening: isBuffering = !player.isPlaying
-        default: isBuffering = false
+        case .error: set(\.failed, true)
+        case .ended: set(\.ended, true)
+        case .buffering, .opening: set(\.isBuffering, !player.isPlaying)
+        default: set(\.isBuffering, false)
         }
     }
 
@@ -418,17 +501,17 @@ final class VodPlayerModel {
         default: break
         }
         let time = avPlayer.currentTime().seconds
-        if time.isFinite, time > 0 { position = time }
+        if time.isFinite { update(position: time) }
         let length = item.duration.seconds
-        if length.isFinite, length > 0 { duration = length }
+        if length.isFinite, length > 0 { set(\.duration, length) }
         let status = avPlayer.timeControlStatus
-        isPlaying = status == .playing
-        isBuffering = !appleStarted || status == .waitingToPlayAtSpecifiedRate
+        set(\.isPlaying, status == .playing)
+        set(\.isBuffering, !appleStarted || status == .waitingToPlayAtSpecifiedRate)
         if isPlaying {
             let since = applePlayingSince ?? .now
             applePlayingSince = since
-            // Sound for 3 s but still no picture: Apple's player can't show this video.
-            if let layer, !layer.isReadyForDisplay, Date.now.timeIntervalSince(since) > 3 {
+            // Sound for 2 s but still no picture: Apple's player can't show this video.
+            if let layer, !layer.isReadyForDisplay, Date.now.timeIntervalSince(since) > 2 {
                 moveToVLC()
                 return
             }
@@ -437,7 +520,7 @@ final class VodPlayerModel {
             appliedPreferences = true
             applyPreferences()
         }
-        if appleStarted, duration > 0, position >= duration - 1, status == .paused, !ended { ended = true }
+        if appleStarted, duration > 0, position >= duration - 1, status == .paused, !ended, !appleSeeking { ended = true }
     }
 
     func togglePause() {
@@ -456,17 +539,48 @@ final class VodPlayerModel {
             return
         }
         if seconds > 0 { player.jumpForward(seconds) } else { player.jumpBackward(-seconds) }
-        position = max(0, position + Double(seconds))
+        hold(max(0, position + Double(seconds)))
     }
 
+    /// Lands exactly on `seconds` (letting go of the bar, a skip button).
     func seek(to seconds: Double) {
+        appleScrubNext = nil
         if engine == .apple {
-            avPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
-            position = seconds
+            avPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        } else {
+            player.time = VLCTime(int: Int32(seconds * 1000))
+        }
+        hold(seconds)
+    }
+
+    /// While the bar is dragged: shows the picture near that point, at most a few times a second.
+    /// Apple's player jumps to the nearest keyframe (fast) and only one jump runs at a time; the
+    /// newest position waits for it, so the picture keeps up without a queue of old jumps.
+    func scrub(to seconds: Double) {
+        if engine == .apple {
+            guard !appleSeeking else { appleScrubNext = seconds; return }
+            appleSeeking = true
+            let tolerance = CMTime(seconds: 2, preferredTimescale: 600)
+            avPlayer.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.appleSeeking = false
+                    if let next = self.appleScrubNext {
+                        self.appleScrubNext = nil
+                        self.scrub(to: next)
+                    }
+                }
+            }
             return
         }
+        guard Date.now.timeIntervalSince(lastScrubJump) > 0.25 else { return }
+        lastScrubJump = .now
         player.time = VLCTime(int: Int32(seconds * 1000))
+    }
+
+    private func hold(_ seconds: Double) {
         position = seconds
+        seekHold = (seconds, Date.now.addingTimeInterval(4))
     }
 
     func stop() {

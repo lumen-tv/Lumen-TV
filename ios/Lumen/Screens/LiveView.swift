@@ -290,6 +290,7 @@ extension View {
     func playerCover(_ route: Binding<PlayerRoute?>) -> some View {
         fullScreenCover(item: route) { route in
             LivePlayerView(channels: route.channels, startIndex: route.index)
+                .landscapeVideo()
         }
     }
 }

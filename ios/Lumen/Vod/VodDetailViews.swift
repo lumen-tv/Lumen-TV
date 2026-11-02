@@ -351,9 +351,13 @@ struct SeriesDetailView: View {
         .task { omdb = await Omdb.shared.ratings(title: series.title, year: series.year?.intValue, series: true) }
         .task {
             do {
-                let loaded = try await store.seriesInfo(series, in: playlist)
+                // A copy saved on the phone shows at once; a newer one (new episodes) replaces it.
+                let loaded = try await store.seriesInfo(series, in: playlist) { fresh in info = fresh }
                 info = loaded
-                season = nextUp.map { $0.episode.season } ?? loaded.seasons.first?.int32Value ?? 1
+                // The season you're watching; else the one you last looked at; else the first.
+                let seasons = loaded.seasons.map(\.int32Value)
+                let remembered = Self.lastSeason[series.id].flatMap { seasons.contains($0) ? $0 : nil }
+                season = nextUp.map { $0.episode.season } ?? remembered ?? seasons.first ?? 1
             } catch {
                 self.error = error.localizedDescription
             }
@@ -375,11 +379,22 @@ struct SeriesDetailView: View {
             Text(error).font(LumenFont.body).foregroundStyle(LumenColors.textSecondary)
         } else if let info {
             if info.seasons.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(info.seasons.map(\.int32Value), id: \.self) { number in
-                            ChipButton(title: "Season \(number)", selected: number == season, large: wide) { season = number }
+                // Scrolled so the chosen season's pill is in view (season 7 used to sit off screen).
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(info.seasons.map(\.int32Value), id: \.self) { number in
+                                ChipButton(title: "Season \(number)", selected: number == season, large: wide) {
+                                    season = number
+                                    Self.lastSeason[series.id] = number
+                                }
+                                .id(number)
+                            }
                         }
+                    }
+                    .onAppear { proxy.scrollTo(season, anchor: .center) }
+                    .onChange(of: season) { _, number in
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(number, anchor: .center) }
                     }
                 }
             }
@@ -399,6 +414,17 @@ struct SeriesDetailView: View {
 
     private func progress(_ episode: Episode) -> WatchProgress? {
         store.progress(WatchProgress.episodeKey(episode.id), in: playlist)
+    }
+
+    /// The season last picked on each series' page (series id → season), kept across launches.
+    private static var lastSeason: [String: Int32] {
+        get {
+            let saved = UserDefaults.standard.dictionary(forKey: "lastSeason") as? [String: Int] ?? [:]
+            return saved.mapValues { Int32($0) }
+        }
+        set {
+            UserDefaults.standard.set(newValue.mapValues { Int($0) }, forKey: "lastSeason")
+        }
     }
 
     private func resumePosition(_ episode: Episode) -> Double {

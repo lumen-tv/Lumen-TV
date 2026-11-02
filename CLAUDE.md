@@ -119,6 +119,14 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     (`LoadedLibrary.channels/search`, `VodIndex.searchMovies/searchSeries`), built in the background; long `ForEach`es
     use positions as ids. `store.nowNext` caches the guide per channel per minute. Playback's 15 s progress saves are
     `quietly` (disk only; pages update on pause/leave), so hidden tabs don't redraw during playback.
+    Round 2 (not yet run): live AVPlayer starts without waiting (`automaticallyWaitsToMinimizeStalling` off until it
+    plays, 2 s forward buffer); launch refreshes channels(+guide) and VOD in parallel; film/series details cached in
+    Caches/Lumen/details (`LibraryCache.save/loadMovieInfo|SeriesInfo`; films 7 days, series 6 h + refresh in place);
+    VOD player: `ScrubBar`/`SkipLayer` own the position, model sets values only on change, live scrub while dragging
+    (Apple: one keyframe seek in flight; VLC: every 0.25 s), `seekHold` stops the bar snapping back, VLC
+    network-caching 1500; iPhone players go landscape (`ScreenOrientation` + app delegate mask); swipe down closes the
+    film player (not live: vertical swipes zap). Series page opens on the Next-up season, else the last picked
+    (`lastSeason` in UserDefaults), with its pill scrolled into view.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

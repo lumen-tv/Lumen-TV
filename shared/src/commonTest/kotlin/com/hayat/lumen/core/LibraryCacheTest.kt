@@ -45,6 +45,27 @@ class LibraryCacheTest {
     }
 
     @Test
+    fun detailsRoundTrip() {
+        val movie = MovieInfo("A thief.", "Crime", null, "Omar Sy", 3000L, "2021-01-08", null, "15")
+        val p1 = tempPath("movie.json")
+        LibraryCache.saveMovieInfo(movie, p1)
+        assertEquals("Omar Sy", LibraryCache.loadMovieInfo(p1)!!.cast)
+
+        val series = SeriesInfo(
+            listOf(1, 2),
+            listOf(Episode("e1", 1, 1, "Chapter 1", 2700L, null, null, "http://x/series/u/p/e1.mkv")),
+            cast = null, director = null, tmdbId = "96677",
+        )
+        val p2 = tempPath("series.json")
+        LibraryCache.saveSeriesInfo(series, p2)
+        val back = LibraryCache.loadSeriesInfo(p2)!!
+        assertEquals(listOf(1, 2), back.seasons)
+        assertEquals("Chapter 1", back.episodes.single().title)
+        assertEquals("96677", back.tmdbId)
+        listOf(p1, p2).forEach { SystemFileSystem.delete(Path(it)) }
+    }
+
+    @Test
     fun missingOrBrokenFilesAreNoCache() {
         assertNull(LibraryCache.loadLive(tempPath("missing.json")))
         val p = tempPath("broken.json")

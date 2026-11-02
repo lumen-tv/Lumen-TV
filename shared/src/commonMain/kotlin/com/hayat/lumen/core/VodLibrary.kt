@@ -56,6 +56,7 @@ class Series(
 )
 
 /** `get_vod_info`. Every field is optional: panels fill in what TMDB gave them. */
+@Serializable
 class MovieInfo(
     val plot: String?,
     val genre: String?,
@@ -67,6 +68,7 @@ class MovieInfo(
     val ageRating: String?,
 )
 
+@Serializable
 class SeriesInfo(
     /** Season numbers that have episodes, in order. */
     val seasons: List<Int>,
@@ -78,6 +80,7 @@ class SeriesInfo(
     val tmdbId: String? = null,
 )
 
+@Serializable
 class Episode(
     val id: String,
     val season: Int,

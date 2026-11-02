@@ -197,13 +197,17 @@ final class LivePlayerModel {
         // Sound plays even with the silent switch on, as in other video apps.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
-        player.automaticallyWaitsToMinimizeStalling = true
         observation = player.observe(\.timeControlStatus) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
                 guard let self, !self.usesVLC else { return }
                 self.isBuffering = !playing && self.error == nil
-                if playing { self.checkVideo() }
+                if playing {
+                    // Started: from now on a hiccup waits for enough buffer, rather than
+                    // stuttering on and off.
+                    self.player.automaticallyWaitsToMinimizeStalling = true
+                    self.checkVideo()
+                }
             }
         }
     }
@@ -238,6 +242,10 @@ final class LivePlayerModel {
                 return
             }
             let item = AVPlayerItem(url: parsed)
+            // Start as soon as there's something to show (about a second, like the TV), instead
+            // of Apple's default of waiting until it's sure it won't stall, which took seconds.
+            item.preferredForwardBufferDuration = 2
+            player.automaticallyWaitsToMinimizeStalling = false
             statusObservation = item.observe(\.status) { [weak self] item, _ in
                 guard item.status == .failed else { return }
                 Task { @MainActor in
