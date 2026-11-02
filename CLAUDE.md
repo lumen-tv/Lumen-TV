@@ -136,6 +136,12 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     the same point after 15 s without progress unless paused (max 3 in 2 min, then "can't be played"). PiP already covers
     films on Apple's player; VLC films can't (VLCKit 3). `Haptics` (channel/tab change, favourite/My List), and the app
     reopens on the last tab (`lastTab`, never Settings). Declined: keyboard shortcuts, Dynamic Type, Recently watched.
+    Apple's player first (Hayat 2026-11-02, "option C"; not yet run): for Xtream films/episodes that aren't
+    mp4/mov, `HLSRoute` asks the provider for the `.m3u8` copy of the same link (4 s, must start `#EXTM3U`),
+    remembered per server in UserDefaults `hlsRouteByServer` (a "no" retried after 7 days). Apple's player
+    plays the copy (smoother seeking, PiP); no length, failure or no picture → VLC with the real file at the
+    same point, and the server is marked "no" unless its copies have played before. mpv was the next step
+    if this doesn't help (declined for now: big change, untestable from the cloud).
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

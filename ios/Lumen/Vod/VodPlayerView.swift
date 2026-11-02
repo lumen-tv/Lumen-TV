@@ -4,8 +4,10 @@ import SwiftUI
 import VLCKitSPM
 
 /// Full-screen film/episode player. Films in formats Apple's player opens (.mp4, .m4v, .mov,
-/// .m3u8) play through it, so they get Picture in Picture. Everything else (most Xtream films are
-/// .mkv, often with DTS audio) plays through VLC (VLCKit 3), which has no Picture in Picture.
+/// .m3u8) play through it, so they get Picture in Picture. For other Xtream films (most are .mkv,
+/// often with DTS audio) the provider is first asked for an Apple-friendly .m3u8 copy of the same
+/// film (`HLSRoute`); if it has one, Apple's player plays that. Everything else plays through VLC
+/// (VLCKit 3), which has no Picture in Picture.
 /// If Apple's player fails or shows no picture, the film moves to VLC at the same point.
 /// Tap shows the controls; double-tap the left/right side skips 10 s back/forward.
 /// In a series, "Skip intro" / "Skip recap" shows while that part plays and "Next episode" in the
@@ -367,7 +369,12 @@ final class VodPlayerModel {
     /// Apple's video layer, to tell "sound but no picture" (e.g. HEVC it can't show).
     @ObservationIgnored weak var layer: AVPlayerLayer?
     private(set) var engine: Engine = .vlc
+    /// The film's own link (VLC plays this) and what Apple's player plays: the same link, or the
+    /// provider's .m3u8 copy of it.
     @ObservationIgnored private var url: URL?
+    @ObservationIgnored private var appleURL: URL?
+    /// Each `start` gets a new one, so an .m3u8 check that answers late doesn't start an old film.
+    @ObservationIgnored private var startToken = UUID()
     /// Apple's player: where to start once the film is ready, and whether it has started.
     @ObservationIgnored private var appleStartAt: Double = 0
     @ObservationIgnored private var appleStarted = false
@@ -410,15 +417,42 @@ final class VodPlayerModel {
         avPlayer.replaceCurrentItem(with: nil)
         guard let parsed = URL(string: url) else { failed = true; return }
         self.url = parsed
+        appleURL = nil
         pendingVLCJump = nil
         seekHold = nil
         recoveries = []
+        let token = UUID()
+        startToken = token
         if Self.prefersApple(parsed) {
             startApple(parsed, at: seconds)
-        } else {
+            return
+        }
+        guard let copy = HLSRoute.candidate(for: parsed) else {
             startVLC(parsed, at: seconds)
+            return
+        }
+        switch HLSRoute.known(for: parsed) {
+        case .some(true):
+            startApple(copy, at: seconds)
+        case .some(false):
+            startVLC(parsed, at: seconds)
+        case .none:
+            // First film from this provider: ask whether it has the .m3u8 copy (a few seconds at
+            // most), and remember the answer so later films start straight away.
+            isBuffering = true
+            failed = false
+            position = seconds
+            Task { [weak self] in
+                let works = await HLSRoute.probe(copy)
+                guard let self, self.startToken == token else { return }
+                if !works { HLSRoute.remember(false, for: parsed) }
+                if works { self.startApple(copy, at: seconds) } else { self.startVLC(parsed, at: seconds) }
+            }
         }
     }
+
+    /// Whether Apple's player is playing the provider's .m3u8 copy (not the film's own file).
+    private var playingCopy: Bool { appleURL != nil && appleURL != url }
 
     private func resetState(at seconds: Double) {
         position = seconds
@@ -438,6 +472,7 @@ final class VodPlayerModel {
 
     private func startApple(_ url: URL, at seconds: Double) {
         engine = .apple
+        appleURL = url
         appleStartAt = seconds
         appleStarted = false
         applePlayingSince = nil
@@ -448,6 +483,10 @@ final class VodPlayerModel {
     /// Apple's player couldn't (fail, or no picture): carry on in VLC from the same point.
     private func moveToVLC() {
         guard let url else { return }
+        // The .m3u8 copy didn't play: this provider's copies aren't usable, so later films skip them.
+        // (One film failing on a provider whose copies have played before doesn't count.)
+        if playingCopy, HLSRoute.known(for: url) != true { HLSRoute.remember(false, for: url) }
+        appleURL = nil
         let at = max(position, appleStartAt)
         avPlayer.pause()
         avPlayer.replaceCurrentItem(with: nil)
@@ -512,6 +551,12 @@ final class VodPlayerModel {
             moveToVLC()
             return
         case .readyToPlay where !appleStarted:
+            // A copy made on the fly can come without a length (it grows as it's made), and then
+            // jumping doesn't work: VLC plays the real file instead.
+            if playingCopy, !item.duration.seconds.isFinite {
+                moveToVLC()
+                return
+            }
             appleStarted = true
             if appleStartAt > 1 {
                 avPlayer.seek(to: CMTime(seconds: appleStartAt, preferredTimescale: 600))
@@ -532,6 +577,9 @@ final class VodPlayerModel {
         if isPlaying {
             let since = applePlayingSince ?? .now
             applePlayingSince = since
+            if playingCopy, layer?.isReadyForDisplay == true, let url, HLSRoute.known(for: url) != true {
+                HLSRoute.remember(true, for: url) // picture and sound: this provider's copies work
+            }
             // Sound for 2 s but still no picture: Apple's player can't show this video.
             if let layer, !layer.isReadyForDisplay, Date.now.timeIntervalSince(since) > 2 {
                 moveToVLC()
@@ -629,7 +677,7 @@ final class VodPlayerModel {
         seekHold = nil
         player.stop()
         avPlayer.replaceCurrentItem(with: nil)
-        if engine == .apple { startApple(url, at: at) } else { startVLC(url, at: at) }
+        if engine == .apple { startApple(appleURL ?? url, at: at) } else { startVLC(url, at: at) }
     }
 
     private func hold(_ seconds: Double) {
@@ -638,6 +686,7 @@ final class VodPlayerModel {
     }
 
     func stop() {
+        startToken = UUID() // an .m3u8 check still running mustn't start the film after closing
         timer?.invalidate()
         timer = nil
         player.stop()
@@ -746,4 +795,50 @@ struct VLCVideoView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UIView, context: Context) {}
+}
+
+/// Xtream providers can usually hand out a film or episode as an .m3u8 stream as well as its own
+/// file (`/movie/u/p/123.mkv` → `/movie/u/p/123.m3u8`), repackaged for Apple's player. Whether a
+/// provider does is checked once and remembered per server (a "no" is checked again after a week).
+enum HLSRoute {
+    private static let key = "hlsRouteByServer"
+    private static let retryNo: TimeInterval = 7 * 24 * 3600
+
+    /// The .m3u8 link for an Xtream film or episode link, else nil.
+    static func candidate(for url: URL) -> URL? {
+        let path = url.path
+        guard path.contains("/movie/") || path.contains("/series/"),
+              !url.pathExtension.isEmpty, url.pathExtension.lowercased() != "m3u8" else { return nil }
+        return url.deletingPathExtension().appendingPathExtension("m3u8")
+    }
+
+    /// true = the copies play, false = they don't, nil = not known yet.
+    static func known(for url: URL) -> Bool? {
+        guard let entry = (UserDefaults.standard.dictionary(forKey: key) as? [String: [Double]])?[server(url)],
+              entry.count == 2 else { return nil }
+        let works = entry[0] == 1
+        if !works, Date.now.timeIntervalSince1970 - entry[1] > retryNo { return nil }
+        return works
+    }
+
+    static func remember(_ works: Bool, for url: URL) {
+        var all = UserDefaults.standard.dictionary(forKey: key) as? [String: [Double]] ?? [:]
+        all[server(url)] = [works ? 1 : 0, Date.now.timeIntervalSince1970]
+        UserDefaults.standard.set(all, forKey: key)
+    }
+
+    /// Asks for the .m3u8 and checks it really is a playlist (some servers answer 200 with an error page).
+    static func probe(_ url: URL) async -> Bool {
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 4)
+        request.httpMethod = "GET"
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
+        return String(decoding: data.prefix(16), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#EXTM3U")
+    }
+
+    /// Server only (host and port): never the path, which holds the login.
+    private static func server(_ url: URL) -> String {
+        "\(url.host ?? "")" + (url.port.map { ":\($0)" } ?? "")
+    }
 }
