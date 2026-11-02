@@ -13,6 +13,11 @@ struct VodPlayback: Identifiable {
     var upNext: [VodPlayback] = []
     /// For a series episode: what to look up for Skip intro.
     var skipRef: SkipRef? = nil
+    /// The loading screen (`PlaybackLoading`): the picture behind it, the big name (the show's,
+    /// for an episode) and the line under it ("S1 · E3 Come Fly with Me").
+    var art: String? = nil
+    var heading: String = ""
+    var detail: String? = nil
 }
 
 func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodPlayback {
@@ -24,7 +29,9 @@ func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodP
             key: WatchProgress.movieKey(movie.id), kind: .movie, seriesId: nil, movieId: movie.id, title: movie.title,
             posterUrl: movie.posterUrl, position: start,
             duration: info?.durationSecs?.doubleValue ?? 0, updated: .now
-        )
+        ),
+        art: info?.backdropUrl ?? movie.posterUrl,
+        heading: movie.title
     )
 }
 
@@ -41,6 +48,9 @@ func episodePlayback(_ series: Series, _ episode: Episode, from start: Double, e
             duration: episode.durationSecs?.doubleValue ?? 0, updated: .now
         )
     )
+    playback.art = episode.imageUrl ?? series.backdropUrl ?? series.posterUrl
+    playback.heading = series.title
+    playback.detail = "S\(episode.season) · E\(episode.episode)" + (episode.title.map { " \($0)" } ?? "")
     playback.skipRef = SkipRef(
         seriesTitle: series.title, year: series.year?.intValue, tmdbId: tmdbId,
         season: Int(episode.season), episode: Int(episode.episode), durationSecs: episode.durationSecs?.intValue
@@ -408,7 +418,7 @@ struct SeriesDetailView: View {
                 }
             }
         } else {
-            ProgressView().tint(.white).frame(maxWidth: .infinity)
+            LoadingLine(maxWidth: 200).frame(maxWidth: .infinity).padding(.vertical, 24)
         }
     }
 

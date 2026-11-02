@@ -148,6 +148,11 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     the .m3u8 copy, so films stay on VLC there. Films often didn't start until reopened by hand (one-connection
     provider): VLC gets `:http-reconnect`, an opening error or 7 s without picture reopens it by itself after a
     1.5 s pause (`recover`, same 3-in-2-min limit as the stall watchdog).
+  - Loading look (Hayat 2026-11-02, style A of /mnt/project-files/ios-mockups/loading.html; not yet run): no system
+    spinner anywhere. `Theme/Loading.swift`: `LoadingLine` (thin line, light sweeping through; Reduce Motion = pulse) and
+    `PlaybackLoading` (backdrop drifting, name, detail, "Resuming from 42:10" / "Starting"). Films/episodes show it until
+    the picture moves (`VodPlayerModel.started`; `VodPlayback.art/heading/detail`), live channels on the channel's
+    `NameTile` colour until playing (`LivePlayerModel.hasPicture`); later hiccups = the line along the bottom only.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

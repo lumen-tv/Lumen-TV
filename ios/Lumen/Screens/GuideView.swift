@@ -178,7 +178,7 @@ struct GuideView: View {
         }
         if let line {
             HStack(spacing: 10) {
-                if !line.1 { ProgressView().tint(.white).controlSize(.small) }
+                if !line.1 { LoadingLine(maxWidth: 60).frame(width: 60) }
                 Text(line.0).font(LumenFont.caption).foregroundStyle(LumenColors.textSecondary).lineLimit(2)
                 if line.1 {
                     Button("Try again") { Task { await store.loadGuide(playlist) } }

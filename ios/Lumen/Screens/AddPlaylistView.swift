@@ -53,10 +53,10 @@ struct AddPlaylistView: View {
 
                 if adding {
                     Section {
-                        HStack(spacing: 12) {
-                            ProgressView()
+                        VStack(alignment: .leading, spacing: 12) {
                             Text("Checking your login and loading channels…")
                                 .foregroundStyle(LumenColors.textSecondary)
+                            LoadingLine()
                         }
                     }
                 }

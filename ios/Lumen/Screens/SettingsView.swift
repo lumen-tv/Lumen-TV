@@ -281,7 +281,7 @@ struct PlaylistSettingsView: View {
         } label: {
             HStack {
                 Text(title)
-                if saving { Spacer(); ProgressView() }
+                if saving { Spacer(); LoadingLine(maxWidth: 60).frame(width: 60) }
             }
         }
     }
@@ -430,7 +430,7 @@ struct RatingsSettingsView: View {
                 } label: {
                     HStack {
                         Text("Check and save")
-                        if checking { Spacer(); ProgressView() }
+                        if checking { Spacer(); LoadingLine(maxWidth: 60).frame(width: 60) }
                     }
                 }
                 .disabled(key.trimmingCharacters(in: .whitespaces).isEmpty || checking)

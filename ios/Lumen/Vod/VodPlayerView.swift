@@ -61,8 +61,23 @@ struct VodPlayerView: View {
                     .onTapGesture { toggleControls() }
             }
 
-            if model.isBuffering && !model.failed {
-                ProgressView().controlSize(.large).tint(.white)
+            // Until the picture appears: the film's loading screen. Later (a jump, a hiccup) only
+            // the thin line along the bottom, over the picture.
+            if !model.started && !model.failed {
+                PlaybackLoading(
+                    art: current.art.flatMap(URL.init(string:)),
+                    heading: current.heading.isEmpty ? current.title : current.heading,
+                    detail: current.detail,
+                    status: current.startAt > 30 ? "Resuming from \(formatTime(current.startAt))" : "Starting"
+                )
+                .transition(.opacity)
+            } else if model.isBuffering && !model.failed {
+                VStack {
+                    Spacer()
+                    LoadingLine().padding(.horizontal, 24).padding(.bottom, 12)
+                }
+                .allowsHitTesting(false)
+                .transition(.opacity)
             }
             if model.failed {
                 Text("This video can't be played right now.")
@@ -413,6 +428,8 @@ final class VodPlayerModel {
     @ObservationIgnored private var recoveries: [Date] = []
     /// Whether the picture has moved since this film was opened (or reopened).
     @ObservationIgnored private var hasPlayed = false
+    /// The picture has appeared (it moved while playing): the loading screen goes.
+    private(set) var started = false
     /// Whether the remembered audio/subtitle language has been picked for this film yet.
     @ObservationIgnored private var appliedPreferences = false
 
@@ -482,6 +499,7 @@ final class VodPlayerModel {
         lastTime = -1
         lastAdvance = .now
         hasPlayed = false
+        set(\.started, false)
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.poll() }
@@ -694,7 +712,10 @@ final class VodPlayerModel {
     /// says it can't be played.
     private func checkStall(_ time: Double) {
         if userPaused || ended || failed || abs(time - lastTime) > 0.1 {
-            if lastTime >= 0, abs(time - lastTime) > 0.1, isPlaying { hasPlayed = true }
+            if lastTime >= 0, abs(time - lastTime) > 0.1, isPlaying {
+                hasPlayed = true
+                if !started { withAnimation(.easeOut(duration: 0.4)) { started = true } }
+            }
             lastTime = time
             lastAdvance = .now
             return

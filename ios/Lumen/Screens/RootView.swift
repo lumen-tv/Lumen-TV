@@ -382,7 +382,7 @@ struct StatusMessage: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            if loading { ProgressView().tint(.white) }
+            if loading { LoadingLine(maxWidth: 160) }
             Text(text)
                 .font(LumenFont.body)
                 .foregroundStyle(LumenColors.textSecondary)

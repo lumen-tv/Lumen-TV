@@ -46,8 +46,22 @@ struct LivePlayerView: View {
                 .ignoresSafeArea()
                 .opacity(model.usesVLC ? 1 : 0)
 
-            if model.isBuffering {
-                ProgressView().controlSize(.large).tint(.white)
+            // Until the channel's picture appears: its colour, name and what's on (as the films'
+            // loading screen). A hiccup later shows only the thin line along the bottom.
+            if !model.hasPicture && model.error == nil {
+                PlaybackLoading(
+                    art: nil,
+                    colour: NameTile.colour(for: channel.title),
+                    heading: channel.title,
+                    detail: store.nowNext(channel)?.now?.title
+                )
+                .transition(.opacity)
+            } else if model.isBuffering && model.error == nil {
+                VStack {
+                    Spacer()
+                    LoadingLine().padding(.horizontal, 24).padding(.bottom, 12)
+                }
+                .allowsHitTesting(false)
             }
             if let error = model.error {
                 Text(error)
@@ -266,6 +280,8 @@ struct LivePlayerView: View {
 final class LivePlayerModel {
     let player = AVPlayer()
     private(set) var isBuffering = true
+    /// The channel's picture has appeared since it was picked (the loading screen goes).
+    private(set) var hasPicture = false
     private(set) var error: String?
     @ObservationIgnored private var pending: Task<Void, Never>?
     @ObservationIgnored private var observation: NSKeyValueObservation?
@@ -293,6 +309,7 @@ final class LivePlayerModel {
             Task { @MainActor in
                 guard let self, !self.usesVLC else { return }
                 self.isBuffering = !playing && self.error == nil
+                if playing, !self.hasPicture { withAnimation(.easeOut(duration: 0.4)) { self.hasPicture = true } }
                 if playing {
                     // Started: from now on a hiccup waits for enough buffer, rather than
                     // stuttering on and off.
@@ -317,6 +334,7 @@ final class LivePlayerModel {
         player.replaceCurrentItem(with: nil)
         error = nil
         isBuffering = true
+        hasPicture = false
         pending = Task {
             if debounce {
                 try? await Task.sleep(for: .milliseconds(350))
@@ -384,6 +402,7 @@ final class LivePlayerModel {
     private func switchToVLC(_ url: URL) {
         Self.needsVLC.insert(Self.vlcKey(url))
         usesVLC = true
+        hasPicture = false
         player.pause()
         player.replaceCurrentItem(with: nil)
         // Live: a short buffer (ms) keeps it close to live while riding out small hiccups.
@@ -393,6 +412,18 @@ final class LivePlayerModel {
         }
         vlc.play()
         isBuffering = false
+        // VLC says nothing by itself: watch for it playing, to take the loading screen away.
+        pending = Task { [weak self] in
+            for _ in 0..<80 {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, !Task.isCancelled, self.usesVLC else { return }
+                if self.vlc.isPlaying {
+                    withAnimation(.easeOut(duration: 0.4)) { self.hasPicture = true }
+                    return
+                }
+            }
+            self?.hasPicture = true // 20 s: let the picture (or VLC's own error) show, not the cover
+        }
         error = nil
     }
 }
