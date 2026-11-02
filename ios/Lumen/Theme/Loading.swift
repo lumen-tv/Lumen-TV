@@ -40,9 +40,10 @@ struct LoadingLine: View {
     }
 }
 
-/// The screen while a film, episode or channel starts (style A from the mockups): its picture
-/// drifting slowly (or, without one, a wash of `colour`), the name, a detail line, what's
-/// happening ("Resuming from 42:10"), and the loading line. It fades away when the picture appears.
+/// The screen while a film, episode or channel starts (Hayat 2026-11-02: style A's layout over
+/// style C's background): the colours of its picture, blurred into a soft wash that drifts slowly
+/// (or, without a picture, a wash of `colour`), the name, a detail line, what's happening
+/// ("Resuming from 42:10"), and the loading line. It fades away when the picture appears.
 struct PlaybackLoading: View {
     let art: URL?
     var colour: Color = Color(red: 0.06, green: 0.09, blue: 0.18)
@@ -57,8 +58,21 @@ struct PlaybackLoading: View {
         ZStack(alignment: .bottomLeading) {
             Color.black
             if let art {
-                CachedImage(url: art) { colourWash }
-                    .scaleEffect(drift ? 1.08 : 1, anchor: .trailing)
+                GeometryReader { geo in
+                    // A small copy of the picture, blurred and scaled up to fill the screen: just
+                    // its colours, no shapes, and cheap (blurring the full-size picture isn't).
+                    let small = CGSize(width: 96, height: 54)
+                    let fill = max(geo.size.width / small.width, geo.size.height / small.height) * 1.4
+                    CachedImage(url: art) { colourWash }
+                        .frame(width: small.width, height: small.height)
+                        .blur(radius: 9)
+                        .saturation(1.25)
+                        .scaleEffect(fill * (drift ? 1.12 : 1))
+                        .offset(x: drift ? -geo.size.width * 0.04 : 0)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+                Color.black.opacity(0.25)
             } else {
                 colourWash
             }
