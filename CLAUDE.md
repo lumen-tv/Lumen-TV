@@ -56,6 +56,13 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     0.9.2: credits are timed back from the end of the file (DB credit length, when a source gives the end) and never
     before the last 2 min (`SkipPick.creditsStart`): the DB's copy and the provider's file differ in length (Hayat saw
     it 3 min early). Checked on the TV 2026-10-31 (intro worked).
+- **Episode descriptions from TVmaze (0.9.4).** Built on branch `claude/project-thread-lih7zr`. Not yet checked on the TV.
+  - The series page shows the focused episode's "S1 · E3 · Title" and description in place of the show's meta line and plot
+    (Up to the buttons puts the show's back). Episodes the provider sends without a plot or still are filled by
+    `data/vod/EpisodeNotesClient` from TVmaze (free, no key): show by IMDb id (OMDb), else name + first year; then
+    `/shows/{id}/episodes` keyed `season|number`; HTML stripped; cached in memory and `cacheDir/tvmaze` for a week.
+    Whenever TVmaze filled anything, the hero says "Some episode descriptions from TVmaze.com" (CC BY-SA). Same as iOS's
+    `EpisodeNotes.swift`.
 - **Settings page (0.4.0).** Merged (PR #15). Not yet checked on the TV.
   - "Settings" pill at the end of the top tabs (blue dot while an update waits; Home's hint line says so too; the old
     "Update to …" button on Home is gone). Menu left, section right: Playlists (OK = Refresh / Rename / Change link or

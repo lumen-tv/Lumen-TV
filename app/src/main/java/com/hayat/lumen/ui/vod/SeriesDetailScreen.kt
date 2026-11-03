@@ -52,6 +52,10 @@ import com.hayat.lumen.data.xtream.XtreamSeriesInfo
 import com.hayat.lumen.ui.components.LumenButton
 import com.hayat.lumen.ui.components.Ambient
 import com.hayat.lumen.data.ratings.OmdbClient
+import com.hayat.lumen.data.vod.EpisodeNote
+import com.hayat.lumen.data.vod.EpisodeNotesClient
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.CompletableDeferred
 import com.hayat.lumen.R
 import com.hayat.lumen.ui.components.LumenCard
 import com.hayat.lumen.ui.components.Pills
@@ -77,6 +81,7 @@ class SeriesDetailViewModel(
     private val vod: VodRepository,
     private val omdb: OmdbClient,
     private val omdbKey: () -> String?,
+    private val episodeNotes: EpisodeNotesClient,
     private val sourceId: Long,
     private val seriesId: String,
 ) : ViewModel() {
@@ -84,6 +89,11 @@ class SeriesDetailViewModel(
     val hero: StateFlow<HeroInfo?> = _hero
     private val _episodes = MutableStateFlow<EpisodesState>(EpisodesState.Loading)
     val episodes: StateFlow<EpisodesState> = _episodes
+    /** TVmaze descriptions and stills, keyed [EpisodeNotesClient.key]; only used where the provider sent none. */
+    private val _notes = MutableStateFlow<Map<String, EpisodeNote>>(emptyMap())
+    val notes: StateFlow<Map<String, EpisodeNote>> = _notes
+    /** The show with its OMDb ratings (for the IMDb id), once known; null when the series isn't found. */
+    private val show = CompletableDeferred<HeroInfo?>()
 
     val progress: StateFlow<List<WatchProgressEntity>> = vod.seriesProgress(sourceId, seriesId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -92,10 +102,14 @@ class SeriesDetailViewModel(
 
     init {
         viewModelScope.launch {
-            val series = vod.series(sourceId, seriesId) ?: return@launch
-            val full = vod.hero(Poster(sourceId, VodKind.SERIES, seriesId, series.name, series.posterUrl, series.rating))
-            _hero.value = full
-            _hero.value = omdb.addRatings(full, omdbKey(), series = true)
+            try {
+                val series = vod.series(sourceId, seriesId) ?: return@launch
+                val full = vod.hero(Poster(sourceId, VodKind.SERIES, seriesId, series.name, series.posterUrl, series.rating))
+                _hero.value = full
+                _hero.value = omdb.addRatings(full, omdbKey(), series = true)
+            } finally {
+                show.complete(_hero.value)
+            }
         }
         load()
     }
@@ -105,7 +119,7 @@ class SeriesDetailViewModel(
         viewModelScope.launch {
             _episodes.value = try {
                 val info = vod.seriesInfo(sourceId, seriesId)
-                if (info.episodes.isEmpty()) EpisodesState.Failed("No episodes available yet.") else EpisodesState.Loaded(info)
+                if (info.episodes.isEmpty()) EpisodesState.Failed("No episodes available yet.") else EpisodesState.Loaded(info).also { fillBlanks(info) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ImportException) {
@@ -113,6 +127,15 @@ class SeriesDetailViewModel(
             } catch (e: Exception) {
                 EpisodesState.Failed("Couldn't load the episodes.")
             }
+        }
+    }
+
+    /** Asks TVmaze only when some episode has no description or still. The episodes show meanwhile. */
+    private fun fillBlanks(info: XtreamSeriesInfo) {
+        if (info.episodes.none { it.plot == null || it.imageUrl == null } || _notes.value.isNotEmpty()) return
+        viewModelScope.launch {
+            val hero = show.await() ?: return@launch
+            _notes.value = episodeNotes.notes(hero.title, hero.year, hero.ratings?.imdbId)
         }
     }
 
@@ -128,11 +151,14 @@ class SeriesDetailViewModel(
 @Composable
 fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: String) -> Unit) {
     val container = LocalAppContainer.current
-    val vm = viewModel { SeriesDetailViewModel(container.vod, container.omdb, { container.prefs.omdbKey.value }, sourceId, seriesId) }
+    val vm = viewModel { SeriesDetailViewModel(container.vod, container.omdb, { container.prefs.omdbKey.value }, container.episodeNotes, sourceId, seriesId) }
     val hero by vm.hero.collectAsStateWithLifecycle()
     val state by vm.episodes.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val inMyList by vm.inMyList.collectAsStateWithLifecycle()
+    val notes by vm.notes.collectAsStateWithLifecycle()
+    // The episode card with focus, if any: the hero then shows that episode's description.
+    var focusedEpisode by remember { mutableStateOf<String?>(null) }
     val playFocus = remember { FocusRequester() }
 
     val episodes = (state as? EpisodesState.Loaded)?.info?.episodes.orEmpty()
@@ -148,7 +174,26 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
             Modifier.fillMaxSize().padding(horizontal = SafeArea.Horizontal, vertical = SafeArea.Vertical),
             verticalArrangement = Arrangement.Bottom,
         ) {
-            HeroText(hero, Modifier.fillMaxWidth(), plotLines = 2)
+            val focused = episodes.firstOrNull { it.id == focusedEpisode }
+            // TVmaze's licence (CC BY-SA) asks for credit wherever its text or images are shown.
+            val usesTvMaze = remember(episodes, notes) {
+                episodes.any { ep ->
+                    val note = notes[EpisodeNotesClient.key(ep.season, ep.episode)]
+                    (ep.plot == null && note?.summary != null) || (ep.imageUrl == null && note?.image != null)
+                }
+            }
+            HeroText(
+                hero,
+                Modifier.fillMaxWidth(),
+                plotLines = 2,
+                episode = focused?.let { ep ->
+                    EpisodeLine(
+                        heading = "${episodeLabel(ep.season, ep.episode)} · ${VodNames.episode(ep.title, hero?.title) ?: "Episode ${ep.episode}"}",
+                        plot = ep.plot ?: notes[EpisodeNotesClient.key(ep.season, ep.episode)]?.summary,
+                    )
+                },
+                footnote = if (usesTvMaze) "Some episode descriptions from TVmaze.com" else null,
+            )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 LumenButton(
@@ -215,7 +260,11 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
                 }
                 LazyRow(
                     state = rowState,
-                    modifier = Modifier.fillMaxWidth().focusRestorer(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRestorer()
+                        // Leaving the row (Up to the buttons) puts the show's own plot back.
+                        .onFocusChanged { if (!it.hasFocus) focusedEpisode = null },
                     contentPadding = PaddingValues(vertical = 14.dp, horizontal = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
@@ -223,7 +272,8 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
                         EpisodeCard(
                             episode = ep,
                             progress = progress.firstOrNull { it.itemId == ep.id },
-                            fallbackImage = hero?.backdropUrl,
+                            image = ep.imageUrl ?: notes[EpisodeNotesClient.key(ep.season, ep.episode)]?.image ?: hero?.backdropUrl,
+                            onFocused = { focusedEpisode = ep.id },
                             seriesTitle = hero?.title,
                             onClick = { onPlay(ep.id) },
                         )
@@ -237,12 +287,21 @@ fun SeriesDetailScreen(sourceId: Long, seriesId: String, onPlay: (episodeId: Str
 }
 
 @Composable
-private fun EpisodeCard(episode: XtreamEpisode, progress: WatchProgressEntity?, fallbackImage: String?, seriesTitle: String?, onClick: () -> Unit) {
+private fun EpisodeCard(
+    episode: XtreamEpisode,
+    progress: WatchProgressEntity?,
+    image: String?,
+    seriesTitle: String?,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+) {
     val container = LocalAppContainer.current
     Column(Modifier.width(EpisodeWidth)) {
-        LumenCard(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+        LumenCard(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).onFocusChanged { if (it.isFocused) onFocused() },
+        ) {
             Box(Modifier.fillMaxSize().background(LumenColors.Glass)) {
-                val image = episode.imageUrl ?: fallbackImage
                 if (image != null) {
                     AsyncImage(
                         model = image,

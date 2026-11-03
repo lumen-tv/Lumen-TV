@@ -260,13 +260,22 @@ fun BoxScope.Backdrop(hero: HeroInfo?, widthFraction: Float = 0.72f, heightFract
     }
 }
 
-/** Title, tags, the meta line and the plot. (The detail pages show [RatingsPanel] themselves.) */
+/** What the series page shows in place of the show's meta line and plot while an episode is focused. */
+data class EpisodeLine(val heading: String, val plot: String?)
+
+/**
+ * Title, tags, the meta line and the plot. (The detail pages show [RatingsPanel] themselves.)
+ * [episode] swaps the meta line and plot for the focused episode's; [footnote] is a small caption
+ * under the plot (the TVmaze credit on the series page).
+ */
 @Composable
 fun HeroText(
     hero: HeroInfo?,
     modifier: Modifier = Modifier,
     plotLines: Int = 3,
     titleStyle: TextStyle = MaterialTheme.typography.displaySmall,
+    episode: EpisodeLine? = null,
+    footnote: String? = null,
 ) {
     Box(modifier, contentAlignment = Alignment.BottomStart) {
         Crossfade(hero, animationSpec = tween(250), label = "heroText") { shown ->
@@ -283,19 +292,28 @@ fun HeroText(
                     )
                     shown.tags.forEach { QualityTag(it) }
                 }
-                if (shown.meta.isNotEmpty()) {
+                val meta = episode?.heading ?: shown.meta
+                if (meta.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(shown.meta, style = MaterialTheme.typography.bodyLarge, color = LumenColors.TextSecondary, maxLines = 1)
+                    Text(meta, style = MaterialTheme.typography.bodyLarge, color = LumenColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                shown.plot?.let {
+                val plot = if (episode != null) episode.plot else shown.plot
+                // While episodes are focused the plot keeps its full height (minLines), so moving
+                // between a short and a long description doesn't make the title jump.
+                if (plot != null || episode != null) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        it,
+                        plot ?: "",
                         style = MaterialTheme.typography.bodyLarge,
                         color = LumenColors.TextPrimary.copy(alpha = 0.85f),
                         maxLines = plotLines,
+                        minLines = if (episode != null) plotLines else 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+                footnote?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LumenColors.TextTertiary, maxLines = 1)
                 }
             }
         }
