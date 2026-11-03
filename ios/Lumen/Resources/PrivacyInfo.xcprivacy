@@ -20,6 +20,16 @@
 				<string>CA92.1</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- File dates: how old the saved channel/guide/film lists are, to know when to refresh
+			     them. Files inside the app's own container only (C617.1). -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>
