@@ -56,6 +56,7 @@ struct VodTabView: View {
                                 ForEach(movies.prefix(30), id: \.id) { movie in
                                     NavigationLink(value: movie) {
                                         Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 160 : 116)
+                                            .zoomSource(ZoomID.movie(movie.id))
                                     }
                                 }
                             }
@@ -68,6 +69,7 @@ struct VodTabView: View {
                                 ForEach(series.prefix(30), id: \.id) { show in
                                     NavigationLink(value: show) {
                                         Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 160 : 116)
+                                            .zoomSource(ZoomID.series(show.id))
                                     }
                                 }
                             }
@@ -91,11 +93,53 @@ struct VodTabView: View {
 
 extension View {
     /// Where film, series and "See all" links go, for any NavigationStack showing posters.
-    func vodDestinations(_ playlist: Playlist) -> some View {
-        navigationDestination(for: Movie.self) { MovieDetailView(movie: $0, playlist: playlist).pushedPage() }
-            .navigationDestination(for: Series.self) { SeriesDetailView(series: $0, playlist: playlist).pushedPage() }
-            .navigationDestination(for: VodCategoryRoute.self) { VodGridView(route: $0, playlist: playlist).pushedPage() }
+    func vodDestinations(_ playlist: Playlist) -> some View { modifier(VodDestinations(playlist: playlist)) }
+
+    /// Marks a poster or card as where its film or series page zooms out of (`ZoomID`).
+    func zoomSource(_ id: String) -> some View { modifier(ZoomSource(id: id)) }
+}
+
+/// Film and series pages zoom out of the poster you tapped and back into it, as in Apple's TV
+/// app (iOS 18's zoom transition; swiping down on the page shrinks it back). The namespace is
+/// handed down so every poster in this stack, "See all" grids included, can be a source.
+private struct VodDestinations: ViewModifier {
+    let playlist: Playlist
+    @Namespace private var zoom
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.vodZoom, zoom)
+            .navigationDestination(for: Movie.self) {
+                MovieDetailView(movie: $0, playlist: playlist).pushedPage()
+                    .navigationTransition(.zoom(sourceID: ZoomID.movie($0.id), in: zoom))
+            }
+            .navigationDestination(for: Series.self) {
+                SeriesDetailView(series: $0, playlist: playlist).pushedPage()
+                    .navigationTransition(.zoom(sourceID: ZoomID.series($0.id), in: zoom))
+            }
+            .navigationDestination(for: VodCategoryRoute.self) {
+                VodGridView(route: $0, playlist: playlist).pushedPage().environment(\.vodZoom, zoom)
+            }
     }
+}
+
+enum ZoomID {
+    static func movie(_ id: String) -> String { "m:\(id)" }
+    static func series(_ id: String) -> String { "s:\(id)" }
+}
+
+private struct ZoomSource: ViewModifier {
+    let id: String
+    @Environment(\.vodZoom) private var zoom
+
+    func body(content: Content) -> some View {
+        if let zoom { content.matchedTransitionSource(id: id, in: zoom) } else { content }
+    }
+}
+
+extension EnvironmentValues {
+    /// The zoom transition's namespace in a stack that shows posters (`vodDestinations`).
+    @Entry var vodZoom: Namespace.ID? = nil
 }
 
 struct VodCategoryRoute: Hashable {
@@ -238,9 +282,9 @@ struct ContinueWatchingRow: View {
         let card = WideCard(url: backdrop(for: item), title: upNext ?? item.title,
                             progress: upNext == nil ? item.fraction : nil, width: wide ? 340 : 280)
         if let id = item.movieId, let movie = index.movieById[id] {
-            NavigationLink(value: movie) { card }
+            NavigationLink(value: movie) { card.zoomSource(ZoomID.movie(movie.id)) }
         } else if let id = item.seriesId, let series = index.seriesById[id] {
-            NavigationLink(value: series) { card }
+            NavigationLink(value: series) { card.zoomSource(ZoomID.series(series.id)) }
         }
     }
 
@@ -296,6 +340,7 @@ struct VodGridView: View {
                             let movie = items[i]
                             NavigationLink(value: movie) {
                                 Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
+                                    .zoomSource(ZoomID.movie(movie.id))
                             }
                         }
                     } else {
@@ -305,6 +350,7 @@ struct VodGridView: View {
                             let show = items[i]
                             NavigationLink(value: show) {
                                 Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
+                                    .zoomSource(ZoomID.series(show.id))
                             }
                         }
                     }

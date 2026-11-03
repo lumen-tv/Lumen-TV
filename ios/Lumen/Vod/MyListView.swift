@@ -101,9 +101,9 @@ struct MyListView: View {
     private func cell(_ item: MyListItem, index: VodIndex?, width: CGFloat) -> some View {
         let poster = Poster(url: item.posterUrl, title: item.title, subtitle: item.kind == .series ? "Series" : nil, width: width)
         if item.kind == .movie, let movie = index?.movieById[item.id] {
-            NavigationLink(value: movie) { poster }
+            NavigationLink(value: movie) { poster.zoomSource(ZoomID.movie(movie.id)) }
         } else if item.kind == .series, let series = index?.seriesById[item.id] {
-            NavigationLink(value: series) { poster }
+            NavigationLink(value: series) { poster.zoomSource(ZoomID.series(series.id)) }
         } else {
             poster.opacity(0.6)
         }

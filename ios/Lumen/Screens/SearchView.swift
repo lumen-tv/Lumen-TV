@@ -67,6 +67,7 @@ struct SearchView: View {
                 ForEach(results.movies, id: \.id) { movie in
                     NavigationLink(value: movie) {
                         Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
+                            .zoomSource(ZoomID.movie(movie.id))
                     }
                 }
             }
@@ -76,6 +77,7 @@ struct SearchView: View {
                 ForEach(results.series, id: \.id) { show in
                     NavigationLink(value: show) {
                         Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
+                            .zoomSource(ZoomID.series(show.id))
                     }
                 }
             }

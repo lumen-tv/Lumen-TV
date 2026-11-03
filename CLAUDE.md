@@ -170,6 +170,8 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     Watching (other unfinished items, played in place by `switchTo`) and Next Episode pills. iOS 26 Liquid Glass via
     `playerGlass`, dark blur before. System font in the player. Live player unchanged.
   - Tapping the open tab again rebuilds it on its first page (`RootView.resets`, fade).
+  - Zoom transitions (2026-11-03, not yet run): film/series pages zoom out of the tapped poster/card (iOS 18
+    `.navigationTransition(.zoom)`; `vodDestinations` owns the namespace, `zoomSource(ZoomID.movie/series(id))` on posters).
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 
