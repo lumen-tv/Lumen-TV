@@ -575,7 +575,9 @@ final class VodPlayerModel {
         update(position: time)
         if player.length > 0 { set(\.duration, player.length) }
         set(\.isPlaying, player.isPlaying)
-        if !appliedPreferences, player.isPlaying, !audioTracks().isEmpty {
+        // Audio lists only exist with 2+ tracks, so also go when there are subtitles ("Off" is
+        // always listed): films with one audio track never got the remembered subtitles.
+        if !appliedPreferences, player.isPlaying, !audioTracks().isEmpty || subtitleTracks().count > 1 {
             appliedPreferences = true
             applyPreferences()
         }
