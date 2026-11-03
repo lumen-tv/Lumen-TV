@@ -52,7 +52,7 @@ struct PlayerCircleButton: View {
                 .frame(width: size, height: size)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle())
         .playerGlass(Circle())
         .accessibilityLabel(label)
     }
@@ -100,7 +100,7 @@ struct PlayerPill: View {
                 .background(selected ? Capsule().fill(.white) : nil)
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle(scale: 0.94))
         .playerGlass(Capsule())
     }
 }

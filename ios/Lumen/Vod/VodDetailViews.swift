@@ -111,8 +111,19 @@ func nextUpPlayback(_ series: Series, store: PlaylistStore, playlist: Playlist) 
 /// iPad's root draws it behind the top pill and the page draws it below, and the two meet without
 /// a seam. It's drawn by `AmbientBackground(backdrop:)`, which also tells the root which picture
 /// the open page shows.
+/// How far a film or series page is scrolled, for its backdrop. A small object of its own so only
+/// the backdrop redraws while scrolling, not the whole page.
+@MainActor
+@Observable
+final class PageScroll {
+    var y: CGFloat = 0
+}
+
 struct PageBackdrop: View {
     let url: String
+    /// The page's scroll position: pulling down past the top stretches the picture, scrolling
+    /// up moves it at a third of the speed (parallax), as on Apple's film pages.
+    var scroll: PageScroll? = nil
     @Environment(\.lumenWide) private var wide
 
     var body: some View {
@@ -148,10 +159,21 @@ struct PageBackdrop: View {
                         startPoint: .top, endPoint: .bottom
                     )
                 }
-                .offset(x: -frame.minX, y: -frame.minY)
+                .scaleEffect(stretch(height), anchor: .top)
+                .offset(x: -frame.minX, y: -frame.minY + parallax)
         }
         .clipped()
         .allowsHitTesting(false)
+    }
+
+    private func stretch(_ height: CGFloat) -> CGFloat {
+        guard let y = scroll?.y, y < 0 else { return 1 }
+        return 1 + (-y) / max(height, 1)
+    }
+
+    private var parallax: CGFloat {
+        guard let y = scroll?.y, y > 0 else { return 0 }
+        return -min(y, 1200) / 3
     }
 }
 
@@ -220,9 +242,13 @@ private struct DetailTitle: View {
 extension View {
     /// Pushed pages show the system back button over the backdrop, with no bar behind it.
     /// [backdrop]: the film or series picture behind the page (and, on iPad, behind the top pill).
-    func detailPageChrome(backdrop: String? = nil) -> some View {
+    func detailPageChrome(backdrop: String? = nil, scroll: PageScroll? = nil) -> some View {
         self.ignoresSafeArea(edges: .top)
-            .background(AmbientBackground(backdrop: backdrop))
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, y in
+                guard let scroll, abs(scroll.y - y) > 0.5 else { return }
+                scroll.y = y
+            }
+            .background(AmbientBackground(backdrop: backdrop, scroll: scroll))
             .toolbar(.visible, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
             .navigationBarTitleDisplayMode(.inline)
@@ -237,6 +263,7 @@ struct MovieDetailView: View {
     @State private var info: MovieInfo?
     @State private var omdb: OmdbRatings?
     @State private var playback: VodPlayback?
+    @State private var scroll = PageScroll()
 
     private var key: String { WatchProgress.movieKey(movie.id) }
 
@@ -263,7 +290,7 @@ struct MovieDetailView: View {
             .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
-        .detailPageChrome(backdrop: info?.backdropUrl ?? movie.posterUrl)
+        .detailPageChrome(backdrop: info?.backdropUrl ?? movie.posterUrl, scroll: scroll)
         .task { info = try? await store.movieInfo(movie, in: playlist) }
         .task { omdb = await Omdb.shared.ratings(title: movie.title, year: movie.year?.intValue, series: false) }
         .fullScreenCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
@@ -329,6 +356,7 @@ struct SeriesDetailView: View {
     @State private var season: Int32 = 1
     @State private var omdb: OmdbRatings?
     @State private var playback: VodPlayback?
+    @State private var scroll = PageScroll()
     /// TVmaze's descriptions and stills for the episodes the provider sent without them.
     @State private var notes: [String: EpisodeNote] = [:]
 
@@ -363,7 +391,7 @@ struct SeriesDetailView: View {
             .padding(.bottom, 30)
         }
         .scrollIndicators(.hidden)
-        .detailPageChrome(backdrop: series.backdropUrl ?? series.posterUrl)
+        .detailPageChrome(backdrop: series.backdropUrl ?? series.posterUrl, scroll: scroll)
         .task { omdb = await Omdb.shared.ratings(title: series.title, year: series.year?.intValue, series: true) }
         .task {
             do {

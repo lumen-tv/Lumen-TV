@@ -96,6 +96,7 @@ struct CachedImage<Placeholder: View>: View {
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
+                        .transition(.opacity)
                 } else {
                     placeholder()
                 }
@@ -104,7 +105,9 @@ struct CachedImage<Placeholder: View>: View {
             .task(id: Request(url: url, pixels: pixels)) {
                 guard let url, geo.size.width > 0, !sharp else { return }
                 if let fetched = await ImagePipeline.shared.image(url, maxPixels: pixels) {
-                    loaded = (url, pixels, fetched)
+                    // Fades in, as in Apple's apps, instead of popping in. (A picture already in
+                    // memory skips this and shows at once.)
+                    withAnimation(.easeOut(duration: 0.25)) { loaded = (url, pixels, fetched) }
                 }
             }
         }

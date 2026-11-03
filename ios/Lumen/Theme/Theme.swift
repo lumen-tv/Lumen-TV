@@ -54,6 +54,8 @@ struct AmbientBackground: View {
     var tint: Color = LumenColors.ambientCool
     /// A film or series picture over the glows (`PageBackdrop`).
     var backdrop: String? = nil
+    /// The page's scroll position, which stretches and moves the picture.
+    var scroll: PageScroll? = nil
     @Environment(\.ambientTints) private var tints
     @Environment(\.ambientTab) private var tab
     @State private var id = UUID()
@@ -79,7 +81,7 @@ struct AmbientBackground: View {
                     center: at(0.9, 1),
                     startRadius: 0, endRadius: max(screen.width, 400) * 0.7
                 )
-                if let backdrop { PageBackdrop(url: backdrop) }
+                if let backdrop { PageBackdrop(url: backdrop, scroll: scroll) }
             }
         }
         .ignoresSafeArea()
@@ -154,9 +156,9 @@ struct PrimaryButtonStyle: ButtonStyle {
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
             .background(.white, in: Capsule())
-            .opacity(configuration.isPressed ? 0.75 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.easeOut(duration: 0.18), value: configuration.isPressed)
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(LumenMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -169,6 +171,25 @@ struct GlassButtonStyle: ButtonStyle {
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
             .glass(cornerRadius: 999, fill: configuration.isPressed ? LumenColors.glassStrong : LumenColors.glass)
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(LumenMotion.press, value: configuration.isPressed)
+    }
+}
+
+/// Apple-style motion: springs rather than plain fades.
+enum LumenMotion {
+    /// A finger on a card or button: it sinks quickly and springs back with a little bounce.
+    static let press = Animation.spring(response: 0.28, dampingFraction: 0.62)
+}
+
+/// Buttons in the film player: sink and spring back like the rest.
+struct PressStyle: ButtonStyle {
+    var scale: CGFloat = 0.9
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(LumenMotion.press, value: configuration.isPressed)
     }
 }
 

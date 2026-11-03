@@ -254,8 +254,8 @@ struct TileProgress: View {
 struct TileButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .brightness(configuration.isPressed ? -0.05 : 0)
-            .animation(.easeOut(duration: 0.18), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .brightness(configuration.isPressed ? -0.06 : 0)
+            .animation(LumenMotion.press, value: configuration.isPressed)
     }
 }
