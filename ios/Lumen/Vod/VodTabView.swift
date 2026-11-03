@@ -233,7 +233,10 @@ struct ContinueWatchingRow: View {
 
     @ViewBuilder
     private func link(for item: WatchProgress) -> some View {
-        let card = WideCard(url: backdrop(for: item), title: item.title, progress: item.fraction, width: wide ? 340 : 280)
+        // A finished episode stands for the next one (see `continueWatching`).
+        let upNext = item.finished ? item.next : nil
+        let card = WideCard(url: backdrop(for: item), title: upNext ?? item.title,
+                            progress: upNext == nil ? item.fraction : nil, width: wide ? 340 : 280)
         if let id = item.movieId, let movie = index.movieById[id] {
             NavigationLink(value: movie) { card }
         } else if let id = item.seriesId, let series = index.seriesById[id] {

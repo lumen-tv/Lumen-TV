@@ -234,6 +234,7 @@ struct VodPlayerView: View {
         item.duration = duration
         item.position = finished ? duration : model.position
         item.updated = .now
+        if item.kind == .series { item.next = queue.first?.progress.title }
         store.saveProgress(item, in: playlist, quietly: quietly)
     }
 

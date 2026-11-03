@@ -731,13 +731,18 @@ final class PlaylistStore {
         saveProgress()
     }
 
-    /// Unfinished films (or series, one entry each), most recent first.
+    /// Unfinished films, and one entry per series, most recent first. A series shows the episode
+    /// watched last: if that one is finished, the card moves on to the next episode (its title,
+    /// no progress line); with no next one known (the last episode), the series drops out.
+    /// Picking the newest unfinished episode instead left the card behind: after finishing E3 it
+    /// still showed an E1 you'd stopped early (Hayat 2026-11-03).
     func continueWatching(_ kind: WatchProgress.Kind, in playlist: Playlist) -> [WatchProgress] {
-        let items = (progress[playlist.id] ?? [:]).values.filter { $0.kind == kind && !$0.finished }
+        let items = (progress[playlist.id] ?? [:]).values.filter { $0.kind == kind }
         var seenSeries = Set<String>()
         return items.sorted { $0.updated > $1.updated }.filter { item in
-            guard let series = item.seriesId else { return true }
-            return seenSeries.insert(series).inserted
+            guard let series = item.seriesId else { return !item.finished }
+            guard seenSeries.insert(series).inserted else { return false }
+            return !item.finished || item.next != nil
         }
     }
 

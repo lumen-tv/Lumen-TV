@@ -60,6 +60,10 @@ struct WatchProgress: Codable, Hashable {
     var position: Double
     var duration: Double
     var updated: Date
+    /// For an episode: the next one ("Show · S1 E4"), when the player had it queued. Lets
+    /// Continue watching move on to it once this one is finished. Optional, so lists saved
+    /// before it (and on the other device) still read.
+    var next: String? = nil
 
     /// Like the TV: 95% counts as watched.
     var finished: Bool { duration > 0 && position >= duration * 0.95 }
