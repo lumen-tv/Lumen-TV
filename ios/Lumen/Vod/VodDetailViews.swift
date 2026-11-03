@@ -18,6 +18,8 @@ struct VodPlayback: Identifiable {
     var art: String? = nil
     var heading: String = ""
     var detail: String? = nil
+    /// The player's Info panel: the film's or episode's description.
+    var plot: String? = nil
 }
 
 func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodPlayback {
@@ -31,7 +33,8 @@ func moviePlayback(_ movie: Movie, info: MovieInfo?, from start: Double) -> VodP
             duration: info?.durationSecs?.doubleValue ?? 0, updated: .now
         ),
         art: movie.posterUrl ?? info?.backdropUrl, // the film's own colours (its poster), not a still
-        heading: movie.title
+        heading: movie.title,
+        plot: info?.plot
     )
 }
 
@@ -51,6 +54,7 @@ func episodePlayback(_ series: Series, _ episode: Episode, from start: Double, e
     playback.art = series.posterUrl ?? series.backdropUrl // the show's colours, not the episode's still
     playback.heading = series.title
     playback.detail = "S\(episode.season) · E\(episode.episode)" + (episode.title.map { " \($0)" } ?? "")
+    playback.plot = episode.plot ?? series.plot
     playback.skipRef = SkipRef(
         seriesTitle: series.title, year: series.year?.intValue, tmdbId: tmdbId,
         season: Int(episode.season), episode: Int(episode.episode), durationSecs: episode.durationSecs?.intValue

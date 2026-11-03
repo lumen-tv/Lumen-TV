@@ -29,6 +29,9 @@ final class VLCEngine {
     }
 
     func pause() { player.pause() }
+
+    /// Playback speed (1 = normal). VLC applies it a moment later.
+    func setRate(_ rate: Float) { try? player.setPlaybackRate(PlaybackRate(rate)) }
     func stop() { player.stop() }
 
     var isPlaying: Bool { player.state == .playing }

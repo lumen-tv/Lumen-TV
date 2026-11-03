@@ -13,6 +13,9 @@ struct RootView: View {
     /// Tabs opened so far. Each stays alive once opened (hidden, not removed), so switching back
     /// keeps its scroll position and pushed pages, as a real tab bar does.
     @State private var opened: Set<AppTab> = [.live]
+    /// Bumped when the open tab's button is tapped again: the tab is rebuilt on its first page
+    /// (pushed pages gone, back at the top), as in Apple's own apps (Hayat 2026-11-03).
+    @State private var resets: [AppTab: Int] = [:]
     /// The bar is in search mode: it has turned into a search field and the results cover the
     /// open tab (no separate search page, Hayat 2026-10-31).
     @State private var searching = false
@@ -41,6 +44,8 @@ struct RootView: View {
                 ForEach(AppTab.allCases) { item in
                     if opened.contains(item) {
                         screen(for: item)
+                            .id(resets[item, default: 0])
+                            .transition(.opacity)
                             .opacity(tab == item ? 1 : 0)
                             .allowsHitTesting(tab == item)
                             .accessibilityHidden(tab != item)
@@ -96,7 +101,14 @@ struct RootView: View {
     }
 
     private func select(_ item: AppTab) {
-        if searching { endSearch() }
+        if searching {
+            endSearch()
+        } else if item == tab {
+            // Already open: back to its first page.
+            Haptics.select()
+            withAnimation(.easeOut(duration: 0.25)) { resets[item, default: 0] += 1 }
+            return
+        }
         if item != tab { Haptics.select() }
         opened.insert(item)
         tab = item

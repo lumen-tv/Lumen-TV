@@ -29,6 +29,12 @@ struct VodPlayerView: View {
     @State private var skips: [SkipSegment] = []
     /// The segment whose pill was swiped away, so it stays away.
     @State private var skipDismissed: Double?
+    /// The panel the Info / Continue Watching pills open over the bottom of the picture.
+    @State private var panel: Panel?
+    @State private var volume = SystemVolume()
+    @Environment(\.lumenWide) private var wide
+
+    enum Panel { case info, continueWatching }
 
     /// Swipes that start this close to the top of the screen belong to iOS, not the player.
     private static let systemEdge: CGFloat = 80
@@ -156,73 +162,194 @@ struct VodPlayerView: View {
         }
     }
 
+    /// Laid out like Apple's own player (Hayat 2026-11-03), without its Share and Extras: close
+    /// and Picture in Picture · AirPlay top left, volume top right, −10 / play / +10 in the middle,
+    /// then the title with speed · audio · subtitles, the timeline, and Info / Continue Watching.
     private var controls: some View {
-        VStack {
-            HStack {
-                Text(current.title).font(LumenFont.headline).lineLimit(1)
-                Spacer()
-                if model.engine == .vlc, let vlcPiP {
-                    Button { vlcPiP.toggle() } label: {
-                        Image(systemName: vlcPiP.isActive ? "pip.exit" : "pip.enter")
-                            .font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
+        ZStack {
+            // Apple dims the picture while its controls show. Taps go through to the halves below.
+            Color.black.opacity(0.35).ignoresSafeArea().allowsHitTesting(false)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    PlayerCircleButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    PlayerCapsule {
+                        pipButton
+                        AirPlayButton().frame(width: 52, height: 44).accessibilityLabel("AirPlay")
                     }
-                    .disabled(!vlcPiP.isPossible)
-                    .opacity(vlcPiP.isPossible ? 1 : 0.4)
-                    .accessibilityLabel("Picture in Picture")
-                } else if model.engine == .apple && pip.isSupported {
-                    Button { pip.toggle() } label: {
-                        Image(systemName: pip.isActive ? "pip.exit" : "pip.enter")
-                            .font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
+                    Spacer(minLength: 12)
+                    VolumeCapsule(volume: volume, width: wide ? 190 : 150, touched: showControls)
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: wide ? 110 : 64) {
+                    PlayerCircleButton(systemImage: "gobackward.10", label: "Back 10 seconds", size: 72, iconSize: 30) {
+                        model.skip(-10); showControls()
                     }
-                    .disabled(!pip.isPossible)
-                    .opacity(pip.isPossible ? 1 : 0.4)
-                    .accessibilityLabel("Picture in Picture")
-                }
-                TrackMenu(model: model)
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark").font(.system(size: 17, weight: .semibold)).frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Close")
-            }
-            .foregroundStyle(LumenColors.textPrimary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .glass(fill: .black.opacity(0.5))
-            .padding(16)
-
-            Spacer()
-
-            HStack(spacing: 44) {
-                Button { model.skip(-10); showControls() } label: { Image(systemName: "gobackward.10") }
-                Button { model.togglePause(); showControls() } label: {
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").frame(width: 44)
-                }
-                Button { model.skip(10); showControls() } label: { Image(systemName: "goforward.10") }
-            }
-            .font(.system(size: 34, weight: .semibold))
-            .foregroundStyle(.white)
-
-            Spacer()
-
-            VStack(spacing: 6) {
-                ScrubBar(model: model, scrubbing: $scrubbing, touched: showControls)
-                if !queue.isEmpty {
-                    Button {
-                        saveProgress()
-                        playNext()
-                    } label: {
-                        Label("Next episode", systemImage: "forward.end.fill")
+                    PlayerCircleButton(systemImage: model.isPlaying ? "pause.fill" : "play.fill",
+                                       label: model.isPlaying ? "Pause" : "Play", size: 104, iconSize: 44) {
+                        model.togglePause(); showControls()
                     }
-                    .buttonStyle(GlassButtonStyle())
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    PlayerCircleButton(systemImage: "goforward.10", label: "Forward 10 seconds", size: 72, iconSize: 30) {
+                        model.skip(10); showControls()
+                    }
                 }
+
+                Spacer(minLength: 12)
+
+                if let panel {
+                    panelView(panel)
+                        .padding(.bottom, 14)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else {
+                    HStack(alignment: .bottom, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            if !current.heading.isEmpty, let detail = current.detail {
+                                Text(detail)
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .lineLimit(1)
+                            }
+                            Text(current.heading.isEmpty ? current.title : current.heading)
+                                .font(.system(size: wide ? 28 : 24, weight: .bold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 12)
+                        PlayerCapsule {
+                            SpeedMenu(model: model)
+                            AudioMenu(model: model)
+                            SubtitleMenu(model: model)
+                        }
+                    }
+                    .padding(.bottom, 10)
+                    PlayerTimeline(model: model, scrubbing: $scrubbing, touched: showControls)
+                }
+
+                HStack(spacing: 12) {
+                    PlayerPill(title: "Info", selected: panel == .info) { toggle(.info) }
+                    PlayerPill(title: "Continue Watching", selected: panel == .continueWatching) { toggle(.continueWatching) }
+                    if !queue.isEmpty {
+                        PlayerPill(title: "Next Episode") {
+                            saveProgress()
+                            playNext()
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(.top, 12)
             }
-            .padding(16)
-            .glass(fill: .black.opacity(0.5))
-            .padding(16)
+            .padding(.horizontal, wide ? 32 : 20)
+            .padding(.vertical, wide ? 20 : 14)
+            .animation(.easeOut(duration: 0.22), value: panel)
+        }
+        .background(HiddenVolumeView(volume: volume).frame(width: 1, height: 1))
+    }
+
+    @ViewBuilder
+    private var pipButton: some View {
+        if model.engine == .vlc, let vlcPiP {
+            Button { vlcPiP.toggle() } label: {
+                PlayerIcon(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter")
+            }
+            .buttonStyle(.plain)
+            .disabled(!vlcPiP.isPossible)
+            .opacity(vlcPiP.isPossible ? 1 : 0.4)
+            .accessibilityLabel("Picture in Picture")
+        } else if model.engine == .apple && pip.isSupported {
+            Button { pip.toggle() } label: {
+                PlayerIcon(systemImage: pip.isActive ? "pip.exit" : "pip.enter")
+            }
+            .buttonStyle(.plain)
+            .disabled(!pip.isPossible)
+            .opacity(pip.isPossible ? 1 : 0.4)
+            .accessibilityLabel("Picture in Picture")
         }
     }
 
+    private func toggle(_ which: Panel) {
+        panel = panel == which ? nil : which
+        showControls()
+    }
+
+    @ViewBuilder
+    private func panelView(_ which: Panel) -> some View {
+        switch which {
+        case .info:
+            VStack(alignment: .leading, spacing: 8) {
+                Text(current.heading.isEmpty ? current.title : current.heading)
+                    .font(.system(size: wide ? 26 : 22, weight: .bold))
+                if let detail = current.detail {
+                    Text(detail).font(.system(size: 15, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                }
+                Text(current.plot ?? "No description for this one.")
+                    .font(.system(size: wide ? 17 : 15))
+                    .foregroundStyle(.white.opacity(current.plot == nil ? 0.6 : 0.9))
+                    .lineLimit(wide ? 5 : 3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: wide ? 760 : .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case .continueWatching:
+            let items = otherUnfinished
+            if items.isEmpty {
+                Text("Nothing else to continue yet.")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(items, id: \.key) { item in
+                            Button { Task { await switchTo(item) } } label: {
+                                let upNext = item.finished ? item.next : nil
+                                WideCard(url: item.posterUrl, title: upNext ?? item.title,
+                                         progress: upNext == nil ? item.fraction : nil, width: wide ? 260 : 200)
+                            }
+                            .buttonStyle(TileButtonStyle())
+                        }
+                    }
+                }
+                .scrollClipDisabled()
+            }
+        }
+    }
+
+    /// Films and series in progress, newest first, apart from what's playing.
+    private var otherUnfinished: [WatchProgress] {
+        (store.continueWatching(.movie, in: playlist) + store.continueWatching(.series, in: playlist))
+            .filter { $0.key != current.progress.key && $0.seriesId.map { $0 != current.progress.seriesId } ?? true }
+            .sorted { $0.updated > $1.updated }
+    }
+
+    /// Plays a Continue Watching card here, without leaving the player: a film where it stopped;
+    /// an episode where it stopped, or the next one when that was finished.
+    private func switchTo(_ item: WatchProgress) async {
+        guard case .loaded(let index) = store.vodState(of: playlist) else { return }
+        if let id = item.movieId, let movie = index.movieById[id] {
+            let info = try? await store.movieInfo(movie, in: playlist)
+            open(moviePlayback(movie, info: info, from: item.finished ? 0 : item.position))
+        } else if let seriesId = item.seriesId, let series = index.seriesById[seriesId],
+                  let info = try? await store.seriesInfo(series, in: playlist) {
+            let episodes = info.episodes
+            let episodeId = String(item.key.dropFirst(2)) // "e:<id>"
+            guard let at = episodes.firstIndex(where: { $0.id == episodeId }) else { return }
+            let moveOn = item.finished && at + 1 < episodes.count
+            let episode = moveOn ? episodes[at + 1] : episodes[at]
+            open(episodePlayback(series, episode, from: moveOn || item.finished ? 0 : item.position,
+                                 episodes: episodes, tmdbId: info.tmdbId))
+        }
+    }
+
+    private func open(_ next: VodPlayback) {
+        saveProgress()
+        current = next
+        queue = next.upNext
+        panel = nil
+        model.start(next.streamUrl, at: next.startAt)
+        showControls()
+    }
 
     private func playNext() {
         guard let next = queue.first else { return }
@@ -245,7 +372,7 @@ struct VodPlayerView: View {
 
     private func toggleControls() {
         withAnimation(.easeOut(duration: 0.18)) { controlsVisible.toggle() }
-        if controlsVisible { scheduleHide() }
+        if controlsVisible { scheduleHide() } else { panel = nil }
     }
 
     private func showControls() {
@@ -257,57 +384,14 @@ struct VodPlayerView: View {
         hideTask?.cancel()
         hideTask = Task {
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, model.isPlaying, scrubbing == nil else { return }
+            guard !Task.isCancelled, model.isPlaying, scrubbing == nil, panel == nil else { return }
             withAnimation(.easeOut(duration: 0.3)) { controlsVisible = false }
         }
     }
 }
 
-/// The progress bar and times. Its own view because it reads the position, which changes twice
-/// a second: only this part redraws then, not the whole player. While you drag, the picture
-/// follows your finger (`VodPlayerModel.scrub`); letting go lands exactly there.
-struct ScrubBar: View {
-    let model: VodPlayerModel
-    @Binding var scrubbing: Double?
-    let touched: () -> Void
-
-    var body: some View {
-        let shown = scrubbing ?? model.position
-        VStack(spacing: 6) {
-            Slider(
-                value: Binding(
-                    get: { shown },
-                    set: { value in
-                        scrubbing = value
-                        model.scrub(to: value)
-                        touched()
-                    }
-                ),
-                in: 0...max(model.duration, 1),
-                onEditingChanged: { editing in
-                    if !editing, let target = scrubbing {
-                        model.seek(to: target)
-                        scrubbing = nil
-                    }
-                }
-            )
-            .tint(.white)
-            HStack {
-                Text(formatTime(shown))
-                    .font(scrubbing == nil ? LumenFont.caption : LumenFont.inter(15, .semibold))
-                    .foregroundStyle(scrubbing == nil ? LumenColors.textSecondary : LumenColors.textPrimary)
-                Spacer()
-                Text("-" + formatTime(max(0, model.duration - shown)))
-            }
-            .font(LumenFont.caption)
-            .foregroundStyle(LumenColors.textSecondary)
-            .monospacedDigit()
-        }
-    }
-}
-
 /// "Skip intro" / "Skip recap" / "Next episode": a white pill like the TV's, bottom right. Tap
-/// skips; swipe it away to hide it. Its own view for the same reason as `ScrubBar`.
+/// skips; swipe it away to hide it. Its own view for the same reason as `PlayerTimeline`.
 struct SkipLayer: View {
     let model: VodPlayerModel
     let skips: [SkipSegment]
@@ -333,7 +417,7 @@ struct SkipLayer: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(.trailing, 24)
                 // Above the bottom panel when the controls are up.
-                .padding(.bottom, controlsVisible ? 150 : 32)
+                .padding(.bottom, controlsVisible ? 210 : 32)
                 .transition(.opacity)
             }
         }
@@ -345,39 +429,6 @@ struct SkipLayer: View {
               let offer = SkipPick.at(skips, position: model.position, duration: model.duration, hasNext: hasNext),
               offer.segmentStart != dismissed else { return nil }
         return offer
-    }
-}
-
-/// Audio and subtitle choice, the iOS way: one menu.
-struct TrackMenu: View {
-    let model: VodPlayerModel
-
-    var body: some View {
-        Menu {
-            let audio = model.audioTracks()
-            if !audio.isEmpty {
-                Section("Audio") {
-                    ForEach(audio, id: \.id) { track in
-                        Button { model.selectAudio(track.id) } label: {
-                            if track.selected { Label(track.name, systemImage: "checkmark") } else { Text(track.name) }
-                        }
-                    }
-                }
-            }
-            let subtitles = model.subtitleTracks()
-            if !subtitles.isEmpty {
-                Section("Subtitles") {
-                    ForEach(subtitles, id: \.id) { track in
-                        Button { model.selectSubtitle(track.id) } label: {
-                            if track.selected { Label(track.name, systemImage: "checkmark") } else { Text(track.name) }
-                        }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "captions.bubble").font(.system(size: 18, weight: .semibold)).frame(width: 44, height: 44)
-        }
-        .accessibilityLabel("Audio and subtitles")
     }
 }
 
@@ -438,6 +489,20 @@ final class VodPlayerModel {
     private(set) var started = false
     /// Whether the remembered audio/subtitle language has been picked for this film yet.
     @ObservationIgnored private var appliedPreferences = false
+    /// Playback speed (1 = normal), kept for the next episode. VLC starts each film at 1, so it's
+    /// set again once the film plays (`vlcRate` = what VLC was last given).
+    private(set) var rate: Float = 1
+    @ObservationIgnored private var vlcRate: Float = 1
+
+    func setRate(_ value: Float) {
+        rate = value
+        avPlayer.defaultRate = value // what play() uses
+        if avPlayer.rate > 0 { avPlayer.rate = value }
+        if engine == .vlc {
+            player.setRate(value)
+            vlcRate = value
+        }
+    }
 
     init() {
         try? AVAudioSessionHelper.activate()
@@ -501,6 +566,7 @@ final class VodPlayerModel {
         ended = false
         isBuffering = true
         appliedPreferences = false
+        vlcRate = 1
         userPaused = false
         lastTime = -1
         lastAdvance = .now
@@ -580,6 +646,10 @@ final class VodPlayerModel {
         update(position: time)
         if player.length > 0 { set(\.duration, player.length) }
         set(\.isPlaying, player.isPlaying)
+        if player.isPlaying, vlcRate != rate {
+            player.setRate(rate)
+            vlcRate = rate
+        }
         // Audio lists only exist with 2+ tracks, so also go when there are subtitles ("Off" is
         // always listed): films with one audio track never got the remembered subtitles.
         if !appliedPreferences, player.isPlaying, !audioTracks().isEmpty || subtitleTracks().count > 1 {
