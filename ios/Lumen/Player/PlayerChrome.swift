@@ -105,19 +105,6 @@ struct PlayerPill: View {
     }
 }
 
-/// AirPlay: the system's route picker, drawn as a plain white icon.
-struct AirPlayButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> AVRoutePickerView {
-        let view = AVRoutePickerView()
-        view.tintColor = .white
-        view.activeTintColor = .white
-        view.prioritizesVideoDevices = true
-        return view
-    }
-
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
-}
-
 /// The phone's own volume, as Apple's player shows it. iOS has no public call to set it; the
 /// accepted way is the slider inside an (invisible) `MPVolumeView`, which also keeps iOS's
 /// volume banner from covering the film while you drag.

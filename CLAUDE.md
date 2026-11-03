@@ -178,6 +178,18 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     when pulled down and move at 1/3 speed when scrolled (`PageScroll`, read only by `PageBackdrop`). The player does
     not zoom open: a zoomed fullScreenCover adds the system's own swipe-down dismiss, which would bring back the
     Control Center problem.
+  - Polish round 2 (Hayat said "All" 2026-11-03; build 8, not yet run): live player restyled like the film player
+    (close · list/PiP/AirPlay capsule · volume; previous / pause / next channel circles; name + LIVE + now/next with a
+    progress bar), live pause (`LivePlayerModel.togglePause`). Lock screen / Control Center Now Playing for both players
+    (`Player/NowPlaying.swift`: MPNowPlayingInfoCenter + remote commands; films ±10 s and scrubbing, channels next/previous;
+    token so a late-closing player can't clear the next one). Film double-taps add up (+10 per tap within 1.2 s,
+    `JumpRipple`). Pinch to fill/fit (AVPlayerLayer gravity / VLC `aspectRatio = .fill`). Long-press a poster in rows,
+    See all and search (`Vod/PosterMenu.swift`): preview card (film details load while held) + Play/Resume + My List;
+    played through `vodDestinations`' `playVod` environment. Posters shimmer while loading (`Shimmer` in
+    CachedImage, `shimmer: true`; the name tile only if the picture fails; Reduce Motion = soft pulse). Home Screen icon
+    menu (`App/QuickActions.swift` + `LumenSceneDelegate` added by `LumenAppDelegate`): "Continue watching" (latest item
+    by name, rewritten on going to the background) and "Search"; `RootView` waits for VOD to load, then plays it.
+    `resumePlayback(item, store:, playlist:)` turns a Continue watching entry into a playback (player and icon menu).
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

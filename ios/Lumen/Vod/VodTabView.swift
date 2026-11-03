@@ -58,6 +58,7 @@ struct VodTabView: View {
                                         Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 160 : 116)
                                             .zoomSource(ZoomID.movie(movie.id))
                                     }
+                                    .posterMenu(movie: movie, playlist: playlist)
                                 }
                             }
                         }
@@ -71,6 +72,7 @@ struct VodTabView: View {
                                         Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 160 : 116)
                                             .zoomSource(ZoomID.series(show.id))
                                     }
+                                    .posterMenu(series: show, playlist: playlist)
                                 }
                             }
                         }
@@ -105,10 +107,13 @@ extension View {
 private struct VodDestinations: ViewModifier {
     let playlist: Playlist
     @Namespace private var zoom
+    /// Started from a poster's long-press menu, without opening its page.
+    @State private var quickPlay: VodPlayback?
 
     func body(content: Content) -> some View {
         content
             .environment(\.vodZoom, zoom)
+            .environment(\.playVod, { quickPlay = $0 })
             .navigationDestination(for: Movie.self) {
                 MovieDetailView(movie: $0, playlist: playlist).pushedPage()
                     .navigationTransition(.zoom(sourceID: ZoomID.movie($0.id), in: zoom))
@@ -118,8 +123,11 @@ private struct VodDestinations: ViewModifier {
                     .navigationTransition(.zoom(sourceID: ZoomID.series($0.id), in: zoom))
             }
             .navigationDestination(for: VodCategoryRoute.self) {
-                VodGridView(route: $0, playlist: playlist).pushedPage().environment(\.vodZoom, zoom)
+                VodGridView(route: $0, playlist: playlist).pushedPage()
+                    .environment(\.vodZoom, zoom)
+                    .environment(\.playVod, { quickPlay = $0 })
             }
+            .fullScreenCover(item: $quickPlay) { VodPlayerView(playback: $0, playlist: playlist) }
     }
 }
 
@@ -230,7 +238,7 @@ struct PosterImage: View {
     var body: some View {
         GeometryReader { geo in
             if let url, let parsed = URL(string: url) {
-                CachedImage(url: parsed) {
+                CachedImage(url: parsed, shimmer: true) {
                     NameTile(title: title, height: min(geo.size.width * 0.6, geo.size.height))
                 }
             } else {
@@ -342,6 +350,7 @@ struct VodGridView: View {
                                 Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
                                     .zoomSource(ZoomID.movie(movie.id))
                             }
+                            .posterMenu(movie: movie, playlist: playlist)
                         }
                     } else {
                         let items = filter(index.seriesByCategory[route.category.id] ?? [], \.title)
@@ -352,6 +361,7 @@ struct VodGridView: View {
                                 Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
                                     .zoomSource(ZoomID.series(show.id))
                             }
+                            .posterMenu(series: show, playlist: playlist)
                         }
                     }
                 }

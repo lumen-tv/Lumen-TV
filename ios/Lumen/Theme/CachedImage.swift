@@ -78,12 +78,16 @@ final class ImagePipeline {
 }
 
 /// A picture filling the space it's given (scaled to fill and cropped), with `placeholder`
-/// until it has loaded or when it can't be loaded.
+/// until it has loaded or when it can't be loaded. With `shimmer`, a soft light sweeps over a
+/// plain tile while it loads (as in Apple's apps), and `placeholder` shows only if it fails.
 struct CachedImage<Placeholder: View>: View {
     let url: URL?
+    var shimmer = false
     @ViewBuilder var placeholder: () -> Placeholder
     @Environment(\.displayScale) private var scale
     @State private var loaded: (url: URL, pixels: Int, image: UIImage)?
+    /// The picture that couldn't be loaded (bad link, offline), so the placeholder shows.
+    @State private var failed: URL?
 
     var body: some View {
         GeometryReader { geo in
@@ -97,6 +101,8 @@ struct CachedImage<Placeholder: View>: View {
                         .frame(width: geo.size.width, height: geo.size.height)
                         .clipped()
                         .transition(.opacity)
+                } else if shimmer, let url, failed != url {
+                    Shimmer()
                 } else {
                     placeholder()
                 }
@@ -108,6 +114,8 @@ struct CachedImage<Placeholder: View>: View {
                     // Fades in, as in Apple's apps, instead of popping in. (A picture already in
                     // memory skips this and shows at once.)
                     withAnimation(.easeOut(duration: 0.25)) { loaded = (url, pixels, fetched) }
+                } else if loaded?.url != url {
+                    withAnimation(.easeOut(duration: 0.25)) { failed = url }
                 }
             }
         }
@@ -126,5 +134,36 @@ struct CachedImage<Placeholder: View>: View {
     private struct Request: Equatable {
         let url: URL?
         let pixels: Int
+    }
+}
+
+/// A loading tile: faint glass with a band of light drifting across it, left to right, every
+/// 1.4 s. With Reduce Motion it just breathes softly instead.
+struct Shimmer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let band = max(geo.size.width, 80) * 0.8
+            Rectangle()
+                .fill(Color.white.opacity(reduceMotion ? 0.05 + 0.04 * phase : 0.06))
+                .overlay(alignment: .leading) {
+                    if !reduceMotion {
+                        LinearGradient(colors: [.clear, .white.opacity(0.10), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: band)
+                            // From fully off the left edge to fully off the right one.
+                            .offset(x: -band + (geo.size.width + band) * phase)
+                    }
+                }
+                .clipped()
+        }
+        .onAppear {
+            let animation = reduceMotion
+                ? Animation.easeInOut(duration: 1.2).repeatForever(autoreverses: true)
+                : Animation.linear(duration: 1.4).repeatForever(autoreverses: false)
+            withAnimation(animation) { phase = 1 }
+        }
+        .accessibilityHidden(true)
     }
 }

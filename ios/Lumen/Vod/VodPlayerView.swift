@@ -36,6 +36,11 @@ struct VodPlayerView: View {
 
     enum Panel { case info, continueWatching }
 
+    /// Double-tap jumps: which side (−1 back, 1 forward) and how far so far. Quick taps add up
+    /// (10, 20, 30…), shown as a soft ripple on that side.
+    @State private var tapJump: (side: Int, seconds: Int, at: Date)?
+    @State private var nowPlaying: UUID?
+
     /// Swipes that start this close to the top of the screen belong to iOS, not the player.
     private static let systemEdge: CGFloat = 80
 
@@ -63,11 +68,24 @@ struct VodPlayerView: View {
             // the controls. (The double tap is declared first so a single tap waits for it.)
             HStack(spacing: 0) {
                 Color.clear.contentShape(Rectangle())
-                    .onTapGesture(count: 2) { model.skip(-10); showControls() }
+                    .onTapGesture(count: 2) { doubleTap(-1) }
                     .onTapGesture { toggleControls() }
                 Color.clear.contentShape(Rectangle())
-                    .onTapGesture(count: 2) { model.skip(10); showControls() }
+                    .onTapGesture(count: 2) { doubleTap(1) }
                     .onTapGesture { toggleControls() }
+            }
+            // Pinch out to fill the screen (no black bars), in to fit, as in Apple's player.
+            .simultaneousGesture(
+                MagnifyGesture().onEnded { value in
+                    if value.magnification > 1.08, !model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(true) } }
+                    if value.magnification < 0.92, model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(false) } }
+                }
+            )
+            if let tapJump {
+                JumpRipple(side: tapJump.side, seconds: tapJump.seconds)
+                    .id(tapJump.at)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
             }
 
             // Until the picture appears: the film's loading screen. Later (a jump, a hiccup) only
@@ -133,8 +151,21 @@ struct VodPlayerView: View {
             model.start(current.streamUrl, at: current.startAt)
             UIApplication.shared.isIdleTimerDisabled = true
             scheduleHide()
+            showNowPlaying()
+        }
+        .onChange(of: current.id) { _, _ in showNowPlaying() }
+        // The lock screen's timeline runs by itself from the rate; it's set again on play/pause,
+        // jumps and every few seconds so it never drifts.
+        .onChange(of: model.isPlaying) { _, _ in updateNowPlaying() }
+        .onChange(of: model.duration) { _, _ in updateNowPlaying() }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                updateNowPlaying()
+            }
         }
         .onDisappear {
+            if let nowPlaying { NowPlaying.shared.end(nowPlaying) }
             saveProgress()
             pip.stop()
             vlcPiP?.stop()
@@ -267,6 +298,45 @@ struct VodPlayerView: View {
         }
     }
 
+    private func doubleTap(_ side: Int) {
+        let adding = tapJump.map { $0.side == side && Date.now.timeIntervalSince($0.at) < 1.2 } ?? false
+        let seconds = adding ? (tapJump?.seconds ?? 0) + 10 : 10
+        let now = Date.now
+        withAnimation(.easeOut(duration: 0.15)) { tapJump = (side, seconds, now) }
+        model.skip(Int32(side * 10))
+        Haptics.select()
+        Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            guard tapJump?.at == now else { return }
+            withAnimation(.easeOut(duration: 0.3)) { tapJump = nil }
+        }
+        updateNowPlaying()
+    }
+
+    private func showNowPlaying() {
+        let token = NowPlaying.shared.begin(
+            title: current.heading.isEmpty ? current.title : current.heading,
+            subtitle: current.detail,
+            artwork: current.art.flatMap(URL.init(string:)),
+            live: false,
+            controls: .init(
+                togglePause: { model.togglePause() },
+                play: { if !model.isPlaying { model.togglePause() } },
+                pause: { if model.isPlaying { model.togglePause() } },
+                skip: { model.skip(Int32($0)) },
+                seek: { model.seek(to: $0) }
+            )
+        )
+        nowPlaying = token
+        updateNowPlaying()
+    }
+
+    private func updateNowPlaying() {
+        guard let nowPlaying else { return }
+        NowPlaying.shared.update(nowPlaying, position: model.position, duration: model.duration,
+                                 playing: model.isPlaying, rate: model.rate)
+    }
+
     private func toggle(_ which: Panel) {
         panel = panel == which ? nil : which
         showControls()
@@ -326,20 +396,7 @@ struct VodPlayerView: View {
     /// Plays a Continue Watching card here, without leaving the player: a film where it stopped;
     /// an episode where it stopped, or the next one when that was finished.
     private func switchTo(_ item: WatchProgress) async {
-        guard case .loaded(let index) = store.vodState(of: playlist) else { return }
-        if let id = item.movieId, let movie = index.movieById[id] {
-            let info = try? await store.movieInfo(movie, in: playlist)
-            open(moviePlayback(movie, info: info, from: item.finished ? 0 : item.position))
-        } else if let seriesId = item.seriesId, let series = index.seriesById[seriesId],
-                  let info = try? await store.seriesInfo(series, in: playlist) {
-            let episodes = info.episodes
-            let episodeId = String(item.key.dropFirst(2)) // "e:<id>"
-            guard let at = episodes.firstIndex(where: { $0.id == episodeId }) else { return }
-            let moveOn = item.finished && at + 1 < episodes.count
-            let episode = moveOn ? episodes[at + 1] : episodes[at]
-            open(episodePlayback(series, episode, from: moveOn || item.finished ? 0 : item.position,
-                                 episodes: episodes, tmdbId: info.tmdbId))
-        }
+        if let next = await resumePlayback(item, store: store, playlist: playlist) { open(next) }
     }
 
     private func open(_ next: VodPlayback) {
@@ -494,6 +551,15 @@ final class VodPlayerModel {
     private(set) var rate: Float = 1
     @ObservationIgnored private var vlcRate: Float = 1
 
+    /// Pinch to fill (`true`) or fit, kept for the next film.
+    private(set) var fill = false
+
+    func setFill(_ value: Bool) {
+        fill = value
+        layer?.videoGravity = value ? .resizeAspectFill : .resizeAspect
+        player.setFill(value)
+    }
+
     func setRate(_ value: Float) {
         rate = value
         avPlayer.defaultRate = value // what play() uses
@@ -567,6 +633,8 @@ final class VodPlayerModel {
         isBuffering = true
         appliedPreferences = false
         vlcRate = 1
+        player.setFill(fill)
+        layer?.videoGravity = fill ? .resizeAspectFill : .resizeAspect
         userPaused = false
         lastTime = -1
         lastAdvance = .now
@@ -1005,5 +1073,40 @@ enum HLSRoute {
     /// Server only (host and port): never the path, which holds the login.
     private static func server(_ url: URL) -> String {
         "\(url.host ?? "")" + (url.port.map { ":\($0)" } ?? "")
+    }
+}
+
+/// The double-tap feedback: a soft light from that side of the screen with "10 seconds" (then
+/// 20, 30… as taps add up) and the jump arrows.
+private struct JumpRipple: View {
+    let side: Int
+    let seconds: Int
+    @State private var grown = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let forward = side > 0
+            ZStack {
+                Ellipse()
+                    .fill(.white.opacity(grown ? 0.10 : 0.18))
+                    .frame(width: geo.size.width * 0.9, height: geo.size.height * 1.6)
+                    .scaleEffect(grown ? 1 : 0.85)
+                    .position(x: forward ? geo.size.width : 0, y: geo.size.height / 2)
+                VStack(spacing: 6) {
+                    Image(systemName: forward ? "forward.fill" : "backward.fill")
+                        .font(.system(size: 26, weight: .semibold))
+                    Text("\(seconds) seconds")
+                        .font(.system(size: 15, weight: .semibold))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                }
+                .foregroundStyle(.white)
+                .position(x: forward ? geo.size.width * 0.8 : geo.size.width * 0.2, y: geo.size.height / 2)
+            }
+            .clipped()
+        }
+        .ignoresSafeArea()
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: seconds)
+        .onAppear { withAnimation(.easeOut(duration: 0.5)) { grown = true } }
     }
 }

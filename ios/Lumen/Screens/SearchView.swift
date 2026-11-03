@@ -69,6 +69,7 @@ struct SearchView: View {
                         Poster(url: movie.posterUrl, title: movie.title, subtitle: movie.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
                             .zoomSource(ZoomID.movie(movie.id))
                     }
+                    .posterMenu(movie: movie, playlist: store.selected)
                 }
             }
         }
@@ -79,6 +80,7 @@ struct SearchView: View {
                         Poster(url: show.posterUrl, title: show.title, subtitle: show.year.map { "\($0.intValue)" }, width: wide ? 150 : 108)
                             .zoomSource(ZoomID.series(show.id))
                     }
+                    .posterMenu(series: show, playlist: store.selected)
                 }
             }
         }

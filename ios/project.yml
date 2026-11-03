@@ -13,7 +13,7 @@ configFiles:
 settings:
   base:
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "7"
+    CURRENT_PROJECT_VERSION: "8"
     SWIFT_VERSION: "5.0"
     # Build only the Mac's own chip for the Simulator, in Release too (Xcode's Run uses Release).
     # Otherwise Xcode also asks for an Intel copy, which the shared Kotlin framework doesn't have
