@@ -227,6 +227,8 @@ struct PlayerTimeline: View {
     let model: VodPlayerModel
     @Binding var scrubbing: Double?
     let touched: () -> Void
+    /// Where the drag started, for the bubble's "+12:30".
+    @State private var scrubStart: Double?
 
     var body: some View {
         let shown = scrubbing ?? model.position
@@ -243,10 +245,24 @@ struct PlayerTimeline: View {
                 .frame(maxHeight: .infinity)
                 .animation(.easeOut(duration: 0.15), value: scrubbing == nil)
                 .contentShape(Rectangle())
+                // While dragging: a bubble over your finger with the time you'd land on and how far
+                // that is from where you started (Hayat 2026-11-03; thumbnails would need a second
+                // connection to the provider, which allows one).
+                .overlay(alignment: .topLeading) {
+                    if let scrubbing {
+                        TimeBubble(time: scrubbing, change: scrubStart.map { scrubbing - $0 })
+                            .position(x: min(max(geo.size.width * fraction, 50), max(geo.size.width - 50, 50)),
+                                      y: geo.size.height / 2 - 48)
+                            .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .bottom)))
+                            .allowsHitTesting(false)
+                    }
+                }
+                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: scrubbing == nil)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag in
                             let value = Double(min(1, max(0, drag.location.x / max(geo.size.width, 1)))) * length
+                            if scrubbing == nil { scrubStart = model.position }
                             scrubbing = value
                             model.scrub(to: value)
                             touched()
@@ -254,6 +270,7 @@ struct PlayerTimeline: View {
                         .onEnded { _ in
                             if let target = scrubbing { model.seek(to: target) }
                             scrubbing = nil
+                            scrubStart = nil
                         }
                 )
             }
@@ -269,6 +286,30 @@ struct PlayerTimeline: View {
         .accessibilityAdjustableAction { direction in
             model.seek(to: max(0, model.position + (direction == .increment ? 10 : -10)))
         }
+    }
+}
+
+/// "1:12:30" with "+12:30" under it, over the finger while scrubbing.
+private struct TimeBubble: View {
+    let time: Double
+    let change: Double?
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(formatTime(time))
+                .font(.system(size: 17, weight: .semibold))
+            if let change, abs(change) >= 1 {
+                Text((change > 0 ? "+" : "−") + formatTime(abs(change)))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .monospacedDigit()
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .playerGlass(Capsule())
+        .fixedSize()
     }
 }
 

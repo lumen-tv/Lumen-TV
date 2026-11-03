@@ -166,7 +166,8 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     (`AVRoutePickerView`) capsule; top right system volume (`SystemVolume`: KVO on outputVolume, set through a hidden
     `MPVolumeView`'s slider); centre −10 / play / +10 circles; bottom title (detail above for episodes) with speed ·
     audio · subtitles capsule (`SpeedMenu` → `VodPlayerModel.setRate`, VLC re-applied once playing), `PlayerTimeline`
-    (elapsed, knobless bar that thickens while dragged, −remaining), then Info (plot, `VodPlayback.plot`), Continue
+    (elapsed, knobless bar that thickens while dragged, −remaining; `TimeBubble` over the finger while dragging: time +
+    change; no thumbnails: they'd need a second provider connection), then Info (plot, `VodPlayback.plot`), Continue
     Watching (other unfinished items, played in place by `switchTo`) and Next Episode pills. iOS 26 Liquid Glass via
     `playerGlass`, dark blur before. System font in the player. Live player unchanged.
   - Tapping the open tab again rebuilds it on its first page (`RootView.resets`, fade).
