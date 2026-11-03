@@ -30,6 +30,9 @@ struct VodPlayerView: View {
     /// The segment whose pill was swiped away, so it stays away.
     @State private var skipDismissed: Double?
 
+    /// Swipes that start this close to the top of the screen belong to iOS, not the player.
+    private static let systemEdge: CGFloat = 80
+
     init(playback: VodPlayback, playlist: Playlist) {
         self.playback = playback
         self.playlist = playlist
@@ -97,18 +100,20 @@ struct VodPlayerView: View {
             }
         }
         // Swipe down to close, as in Apple's own players: the picture follows the finger, and
-        // letting go far enough closes it (otherwise it springs back).
+        // letting go far enough closes it (otherwise it springs back). Swipes starting along the
+        // top edge are left to iOS (Control Center's brightness, notifications): those closed the
+        // episode (Hayat 2026-11-03), so they're ignored, and a pull has to be longer too.
         .offset(y: pull)
         .scaleEffect(1 - min(pull, 400) / 2000)
         .simultaneousGesture(
-            DragGesture(minimumDistance: 24)
+            DragGesture(minimumDistance: 30, coordinateSpace: .global)
                 .onChanged { drag in
-                    guard scrubbing == nil, drag.translation.height > 0,
-                          drag.translation.height > abs(drag.translation.width) else { return }
+                    guard scrubbing == nil, drag.startLocation.y > Self.systemEdge, drag.translation.height > 0,
+                          drag.translation.height > abs(drag.translation.width) * 2 else { return }
                     pull = drag.translation.height
                 }
                 .onEnded { drag in
-                    if pull > 140 || (pull > 40 && drag.predictedEndTranslation.height > 400) {
+                    if pull > 220 || (pull > 100 && drag.predictedEndTranslation.height > 600) {
                         dismiss()
                     } else {
                         withAnimation(.spring(duration: 0.3)) { pull = 0 }
