@@ -157,6 +157,10 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     demo / demo. Static files built by `tools/build_demo.py` in the website repo (open/public-domain films, 2 series,
     14 channels, 3-week guide refreshed weekly by a workflow). `XtreamServer.isStaticDemo` (only that address) reads
     `player_api/<action>[-<id>].json` + `xmltv.xml` and plays `direct_source` links (`DemoLibraryTest`).
+  - Episode descriptions (2026-11-03, Hayat: provider leaves many blank; not yet run): `Data/EpisodeNotes.swift` fills
+    missing episode plots/stills from TVmaze (free, no key; CC BY-SA, so the series page says "Some episode descriptions
+    from TVmaze.com"), show found by OMDb's IMDb id, else name + year; cached a week in Caches/Lumen/tvmaze-*.json.
+    Missing subtitles = the provider's files have none; OpenSubtitles download was offered and declined for now.
   - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 

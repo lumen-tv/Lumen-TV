@@ -325,6 +325,8 @@ struct SeriesDetailView: View {
     @State private var season: Int32 = 1
     @State private var omdb: OmdbRatings?
     @State private var playback: VodPlayback?
+    /// TVmaze's descriptions and stills for the episodes the provider sent without them.
+    @State private var notes: [String: EpisodeNote] = [:]
 
     var body: some View {
         ScrollView {
@@ -372,6 +374,13 @@ struct SeriesDetailView: View {
                 self.error = error.localizedDescription
             }
         }
+        // Only asked when some episode lacks a description or picture; OMDb's IMDb id (with the
+        // user's key) finds the show exactly, else TVmaze is searched by name and year.
+        .task(id: info?.episodes.count ?? 0) {
+            guard let info, info.episodes.contains(where: { $0.plot == nil || $0.imageUrl == nil }) else { return }
+            let imdb = await Omdb.shared.ratings(title: series.title, year: series.year?.intValue, series: true)?.imdbId
+            notes = await EpisodeNotes.shared.notes(title: series.title, year: series.year?.intValue, imdbId: imdb)
+        }
         .fullScreenCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
     }
 
@@ -411,10 +420,17 @@ struct SeriesDetailView: View {
             VStack(spacing: 6) {
                 ForEach(info.episodes.filter { $0.season == season }, id: \.id) { episode in
                     Button { play(episode, from: resumePosition(episode)) } label: {
-                        EpisodeRow(episode: episode, progress: progress(episode))
+                        EpisodeRow(episode: episode, progress: progress(episode), note: notes["\(episode.season)|\(episode.episode)"])
                     }
                     .buttonStyle(ChannelRowStyle())
                     .padding(.horizontal, -12)
+                }
+                // TVmaze's text is CC BY-SA: say where it came from.
+                if usesNotes(info) {
+                    Text("Some episode descriptions from TVmaze.com")
+                        .font(LumenFont.caption)
+                        .foregroundStyle(LumenColors.textSecondary)
+                        .padding(.top, 6)
                 }
             }
         } else {
@@ -424,6 +440,10 @@ struct SeriesDetailView: View {
 
     private func progress(_ episode: Episode) -> WatchProgress? {
         store.progress(WatchProgress.episodeKey(episode.id), in: playlist)
+    }
+
+    private func usesNotes(_ info: SeriesInfo) -> Bool {
+        !notes.isEmpty && info.episodes.contains { $0.season == season && $0.plot == nil && notes["\($0.season)|\($0.episode)"]?.summary != nil }
     }
 
     /// The season last picked on each series' page (series id → season), kept across launches.
@@ -454,12 +474,14 @@ struct SeriesDetailView: View {
 struct EpisodeRow: View {
     let episode: Episode
     let progress: WatchProgress?
+    /// TVmaze's description and still, used where the provider has none.
+    var note: EpisodeNote? = nil
     @Environment(\.lumenWide) private var wide
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack(alignment: .bottom) {
-                PosterImage(url: episode.imageUrl, title: "E\(episode.episode)")
+                PosterImage(url: episode.imageUrl ?? note?.image, title: "E\(episode.episode)")
                 if let progress {
                     ProgressLine(fraction: progress.fraction, height: 3, track: .white.opacity(0.3)).padding(6)
                 }
@@ -474,7 +496,7 @@ struct EpisodeRow: View {
                 if let secs = episode.durationSecs?.doubleValue {
                     Text(formatDuration(secs)).font(LumenFont.caption).foregroundStyle(.secondary)
                 }
-                if let plot = episode.plot {
+                if let plot = episode.plot ?? note?.summary {
                     Text(plot).font(LumenFont.caption).foregroundStyle(.secondary).lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
