@@ -26,6 +26,8 @@ internal class XtreamStream(
     val icon: String?,
     val epgChannelId: String?,
     val number: Int?,
+    /** The stream's own link, sent by some panels; Lumen only uses it for the demo library. */
+    val directSource: String?,
 )
 
 /**
@@ -68,7 +70,7 @@ internal class XtreamApi(private val http: HttpClient) {
             val name = s.name.lenient()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             XtreamStream(
                 id, name, s.categoryId.lenient(), s.icon.lenient().nonBlank(), s.epg.lenient().nonBlank(),
-                s.num.lenient()?.toIntOrNull(),
+                s.num.lenient()?.toIntOrNull(), s.directSource.lenient().nonBlank(),
             )
         }.toList()
 
@@ -151,6 +153,7 @@ internal class XtreamApi(private val http: HttpClient) {
         val rating: JsonElement? = null,
         @SerialName("container_extension") val extension: JsonElement? = null,
         val added: JsonElement? = null,
+        @SerialName("direct_source") val directSource: JsonElement? = null,
     )
 
     @Serializable
@@ -175,6 +178,7 @@ internal class XtreamApi(private val http: HttpClient) {
         @SerialName("stream_icon") val icon: JsonElement? = null,
         @SerialName("epg_channel_id") val epg: JsonElement? = null,
         val num: JsonElement? = null,
+        @SerialName("direct_source") val directSource: JsonElement? = null,
     )
 }
 

@@ -19,9 +19,22 @@ class XtreamServer internal constructor(
     /** Just the host, safe to show. */
     val host: String get() = base.host
 
+    /**
+     * Lumen's own demo library (https://lumen-tv.github.io/demo, login demo / demo), used for App
+     * Review and the store screenshots: free open and public-domain films, shows and test streams.
+     * It's plain files on GitHub Pages, which can't answer `player_api.php?action=…`, so each call
+     * reads `player_api/<action>.json` (`get_vod_info-<id>.json` for one item) instead, and
+     * streams play from each item's `direct_source` link. Only this one address works this way.
+     */
+    internal val isStaticDemo: Boolean
+        get() = base.host == "lumen-tv.github.io" && base.segments.firstOrNull() == "demo"
+
     /** `player_api.php` with the login, plus `action=<action>` when given. */
     internal fun apiUrl(action: String? = null, extra: Map<String, String> = emptyMap()): String =
-        URLBuilder(base).apply {
+        if (isStaticDemo) {
+            val file = (listOf(action ?: "account") + extra.values).joinToString("-")
+            URLBuilder(base).apply { appendPathSegments("player_api", "$file.json") }.buildString()
+        } else URLBuilder(base).apply {
             appendPathSegments("player_api.php")
             // Inside apply, plain `username`/`password` would be URLBuilder's own (user-info) fields.
             parameters.append("username", this@XtreamServer.username)
@@ -32,7 +45,8 @@ class XtreamServer internal constructor(
 
     /** The panel's whole XMLTV guide, `xmltv.php` (holds the login: never log or show it). */
     internal fun xmltvUrl(): String =
-        URLBuilder(base).apply {
+        if (isStaticDemo) URLBuilder(base).apply { appendPathSegments("xmltv.xml") }.buildString()
+        else URLBuilder(base).apply {
             appendPathSegments("xmltv.php")
             parameters.append("username", this@XtreamServer.username)
             parameters.append("password", this@XtreamServer.password)

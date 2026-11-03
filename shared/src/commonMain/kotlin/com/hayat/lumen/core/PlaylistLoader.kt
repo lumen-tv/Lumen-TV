@@ -91,7 +91,8 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
                 categoryId = m.categoryId.lenient().orEmpty(),
                 posterUrl = m.icon.lenient().nonBlank(),
                 rating = m.rating.lenient()?.toDoubleOrNull()?.takeIf { it > 0 },
-                streamUrl = login.movieUrl(id, m.extension.lenient().nonBlank() ?: "mp4"),
+                streamUrl = m.directSource.lenient().nonBlank()?.takeIf { login.isStaticDemo }
+                    ?: login.movieUrl(id, m.extension.lenient().nonBlank() ?: "mp4"),
                 added = m.added.lenient()?.toLongOrNull(),
             )
         }
@@ -165,7 +166,8 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
                 durationSecs = info?.get("duration_secs").lenient()?.toLongOrNull()?.takeIf { it > 0 },
                 imageUrl = info?.get("movie_image").lenient().nonBlank(),
                 plot = info?.get("plot").lenient().nonBlank(),
-                streamUrl = login.episodeUrl(id, e["container_extension"].lenient().nonBlank() ?: "mp4"),
+                streamUrl = e["direct_source"].lenient().nonBlank()?.takeIf { login.isStaticDemo }
+                    ?: login.episodeUrl(id, e["container_extension"].lenient().nonBlank() ?: "mp4"),
             )
         }
         // Usually {"1": [...], "2": [...]}; a few panels send [[...], [...]].
@@ -260,7 +262,7 @@ class PlaylistLoader internal constructor(private val http: HttpClient) {
         val entries = xtream.liveStreams(login).map { s ->
             M3uEntry(
                 name = s.name,
-                url = login.liveStreamUrl(s.streamId, account.outputExtension),
+                url = s.directSource?.takeIf { login.isStaticDemo } ?: login.liveStreamUrl(s.streamId, account.outputExtension),
                 kind = EntryKind.LIVE,
                 tvgId = s.epgChannelId,
                 tvgName = null,
