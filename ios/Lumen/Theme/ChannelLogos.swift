@@ -35,7 +35,7 @@ final class ChannelLogos {
     }
 
     /// Bump when LogoCleaner changes, so logos tidied by an older version are done again.
-    nonisolated private static let version = "v1"
+    nonisolated private static let version = "v2"
     /// Logos are tidied at this size: sharp on the biggest tile (Home on the iPad), quick to do.
     private static let tidySize = 384
     private static let maxAtOnce = 3
@@ -216,10 +216,13 @@ struct LogoTile: View {
             // A little light at the top and shade at the bottom, as on the name tiles.
             LinearGradient(colors: [.white.opacity(0.07), .clear, .black.opacity(0.13)], startPoint: .top, endPoint: .bottom)
             if logo.picture {
+                // Whole artwork as a small rounded card, about the same size as the other logos.
+                let fit = Self.fit(logo.image.size, in: size, area: 0.36, maxWidth: 0.80, maxHeight: 0.70)
                 Image(uiImage: logo.image)
                     .resizable()
                     .interpolation(.high)
-                    .scaledToFit()
+                    .frame(width: fit.width, height: fit.height)
+                    .clipShape(RoundedRectangle(cornerRadius: fit.height * 0.1, style: .continuous))
             } else {
                 let fit = Self.fit(logo.image.size, in: size)
                 Image(uiImage: logo.image)
@@ -233,12 +236,12 @@ struct LogoTile: View {
 
     /// Every logo gets about the same visual weight: 30% of the tile's area, but never wider than
     /// 74% or taller than 60% of it (so wide wordmarks and square badges look equally big).
-    static func fit(_ image: CGSize, in tile: CGSize) -> CGSize {
+    static func fit(_ image: CGSize, in tile: CGSize, area: CGFloat = 0.30, maxWidth: CGFloat = 0.74, maxHeight: CGFloat = 0.60) -> CGSize {
         guard image.width > 0, image.height > 0, tile.width > 0, tile.height > 0 else { return .zero }
         let aspect = image.width / image.height
-        var h = (0.30 * tile.width * tile.height / aspect).squareRoot()
+        var h = (area * tile.width * tile.height / aspect).squareRoot()
         var w = h * aspect
-        let s = min(1, 0.74 * tile.width / w, 0.60 * tile.height / h)
+        let s = min(1, maxWidth * tile.width / w, maxHeight * tile.height / h)
         w *= s; h *= s
         return CGSize(width: w, height: h)
     }

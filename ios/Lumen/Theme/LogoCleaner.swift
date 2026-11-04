@@ -89,10 +89,9 @@ enum LogoCleaner {
             let seed = bins.max { $0.value.count < $1.value.count }!.value
             let bg = LogoRGB(r: median(seed.map { p.r[$0] }), g: median(seed.map { p.g[$0] }), b: median(seed.map { p.b[$0] }))
             let share = Float(opaque.filter { dist(p, $0, bg) < 40 }.count) / Float(opaque.count)
-            let edgeMedian = LogoRGB(r: median(opaque.map { p.r[$0] }), g: median(opaque.map { p.g[$0] }), b: median(opaque.map { p.b[$0] }))
             if share < 0.45 {
                 // Artwork running to the edges (blocks, gradients, photos): show the whole picture.
-                return CleanedLogo(pixels: input, tile: edgeMedian, glow: deep(edgeMedian), mode: .picture)
+                return picture(input)
             }
             let before = Float(p.a.filter { $0 > 128 }.count)
             removeBox(&p, bg)
@@ -100,7 +99,7 @@ enum LogoCleaner {
             let lightBox = bgHls.l > 0.80 || (bgHls.s < 0.12 && bgHls.l > 0.55)
             if !lightBox && Float(p.a.filter { $0 > 128 }.count) < 0.03 * before {
                 // The "box" was really most of the logo.
-                return CleanedLogo(pixels: input, tile: bg, glow: deep(bg), mode: .picture)
+                return picture(input)
             }
             if !lightBox { tile = bg; boxKept = true }
         }
@@ -469,6 +468,27 @@ enum LogoCleaner {
     }
 
     /// A deep version of a colour, for the background glow.
+    /// Artwork that can't be lifted off its background is shown whole, as a rounded card centred
+    /// on a deep tile of its main colour (stretching it across the tile looked wrong: ITV1's
+    /// yellow/white blocks, Sky Sports Main Event's stacked bars).
+    static func picture(_ p: LogoPixels) -> CleanedLogo {
+        let idx = stride((0..<p.count).filter { p.a[$0] > 200 }, max: 3000)
+        var hist = [Float](repeating: 0, count: 24)
+        var sats: [Float] = []
+        for i in idx {
+            let c = hls(p.r[i] / 255, p.g[i] / 255, p.b[i] / 255)
+            guard c.s > 0.30, c.l > 0.12, c.l < 0.88 else { continue }
+            hist[min(23, Int(c.h * 24))] += c.s
+            sats.append(c.s)
+        }
+        var tile = slate
+        if Float(sats.count) > 0.10 * Float(max(1, idx.count)) {
+            let bin = hist.indices.max { hist[$0] < hist[$1] }!
+            tile = rgb((Float(bin) + 0.5) / 24, 0.14, min(0.75, median(sats)))
+        }
+        return CleanedLogo(pixels: p, tile: tile, glow: tile, mode: .picture)
+    }
+
     static func deep(_ c: LogoRGB) -> LogoRGB {
         let x = hls(c.r / 255, c.g / 255, c.b / 255)
         return rgb(x.h, min(x.l, 0.3), x.s)
