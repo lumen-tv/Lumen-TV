@@ -63,7 +63,7 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
             .belowTopBar()
             .refreshable { await store.refreshEverything(playlist) }
-            .ambientBackground(tint: hero.map { NameTile.colour(for: $0.title) } ?? LumenColors.ambientCool)
+            .ambientBackground(tint: hero.map { ChannelLogos.shared.glow(logoUrl: $0.logoUrl, title: $0.title) } ?? LumenColors.ambientCool)
             .sheet(isPresented: $editingFavourites) { FavouritesEditView(playlist: playlist) }
         }
     }

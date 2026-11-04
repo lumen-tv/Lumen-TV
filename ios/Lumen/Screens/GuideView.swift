@@ -466,7 +466,7 @@ struct GuideView: View {
         guard let key = selected?.channelKey, let playlist = store.selected,
               case .loaded(let loaded) = store.state(of: playlist), let channel = loaded.byKey[key]
         else { return LumenColors.ambientCool }
-        return NameTile.colour(for: channel.title)
+        return ChannelLogos.shared.glow(logoUrl: channel.logoUrl, title: channel.title)
     }
 
     private func title(_ source: Source?, _ loaded: LoadedLibrary) -> String {
