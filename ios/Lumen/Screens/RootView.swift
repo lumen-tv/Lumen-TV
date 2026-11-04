@@ -470,7 +470,7 @@ struct TopBarHiddenKey: PreferenceKey {
 extension View {
     /// A page pushed inside a tab: on iPad the top pill steps aside for its back button.
     func pushedPage() -> some View {
-        preference(key: TopBarHiddenKey.self, value: true)
+        modifier(PushedPage())
     }
 
     /// A tab's first page: on iPad its scrolling content starts below the floating pill, while
@@ -485,5 +485,73 @@ private struct BelowTopBar: ViewModifier {
 
     func body(content: Content) -> some View {
         content.contentMargins(.top, space, for: .scrollContent)
+    }
+}
+
+/// Hides the iPad's pill while the page is up, and gives it back the moment the page starts
+/// leaving: as soon as a swipe back (or the back button) begins, not when the page has finished
+/// going, which SwiftUI waits for (Hayat 2026-11-04: the pill took too long to come back). A swipe
+/// that's let go of halfway, so the page stays, hides it again.
+private struct PushedPage: ViewModifier {
+    @State private var leaving = false
+
+    func body(content: Content) -> some View {
+        content
+            .preference(key: TopBarHiddenKey.self, value: !leaving)
+            .background(PageTransitionWatcher { leaving = $0 }.frame(width: 0, height: 0))
+    }
+}
+
+/// A tiny UIKit view controller inside the page: UIKit tells it when its page starts to
+/// appear or disappear, including at the start of an interactive swipe back, which SwiftUI
+/// has no hook for.
+private struct PageTransitionWatcher: UIViewControllerRepresentable {
+    let leaving: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> Watcher {
+        let watcher = Watcher()
+        watcher.leaving = leaving
+        return watcher
+    }
+
+    func updateUIViewController(_ watcher: Watcher, context: Context) {
+        watcher.leaving = leaving
+    }
+
+    final class Watcher: UIViewController {
+        var leaving: ((Bool) -> Void)?
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.isUserInteractionEnabled = false
+            view.backgroundColor = .clear
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            leaving?(false)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            // Only for going back (this page is being removed), not for a page pushed on top or a
+            // player covering it.
+            guard let page = pageController, page.isMovingFromParent else { return }
+            withAnimation(.easeOut(duration: 0.2)) { leaving?(true) }
+            // A swipe let go of early: the page stays, so the pill goes again.
+            transitionCoordinator?.notifyWhenInteractionChanges { [weak self] context in
+                if context.isCancelled { withAnimation(.easeOut(duration: 0.2)) { self?.leaving?(false) } }
+            }
+        }
+
+        /// The page's own controller: the one the navigation stack holds.
+        private var pageController: UIViewController? {
+            var current: UIViewController? = self
+            while let controller = current {
+                if controller.parent is UINavigationController { return controller }
+                current = controller.parent
+            }
+            return nil
+        }
     }
 }
