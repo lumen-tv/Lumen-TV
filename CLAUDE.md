@@ -69,8 +69,13 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     stored as Xtream) loads channels via `PlaylistLoader`, saves only if that works; login in the Keychain, list in
     UserDefaults. Live TV: categories → channels (+ search), full-screen AVPlayer, swipe up/down zaps (350 ms debounce).
     Channels reload at each launch (no on-device database yet). Live TV checked on Hayat's iPhone 2026-10-31: works.
-  - Name tiles + favourites (iOS only for now, Hayat 2026-10-31; not yet run): `ChannelArt` = always `NameTile` (Hayat
-    2026-10-31: provider logos never fit, so none at all on iOS) (style A from the TV's Play-Store plan: palette colour by FNV-1a of the name, white name). Favourites:
+  - Name tiles + favourites (iOS only for now, Hayat 2026-10-31; not yet run): `ChannelArt(channel:)` = the channel's logo from
+    tv-logo/tv-logos (Hayat 2026-11-04), else `NameTile` (style A: palette colour by FNV-1a of the name, white name).
+    Provider logos are never used (they never fit; a clean-up attempt was rejected). The app ships only the collection's
+    file names (`Resources/tv-logos-index.txt`, rebuilt by `ios/tools/tv_logos_index.py`); `TvLogoIndex.match` finds a file
+    by cleaned name + country hint (provider prefix, category, device region); `ChannelLogos` downloads it via
+    `ImagePipeline` from raw.githubusercontent.com and picks a deep tile colour from the logo. Settings → Channel logos
+    (`onlineChannelLogos`, on by default) turns it off, e.g. if App Review objects. Favourites:
     `PlaylistStore.favouriteKeys` (UserDefaults, playlist id → stable keys in order), hold/swipe a row to toggle,
     a card row at the top of Live TV, Edit sheet to reorder/remove, the player zaps within favourites.
   - Movies/Series (not yet run): `PlaylistLoader.loadVod/movieInfo/seriesInfo` (shared, tested), loaded after the channels

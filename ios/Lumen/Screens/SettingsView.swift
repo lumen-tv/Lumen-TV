@@ -51,6 +51,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("IMDb and Rotten Tomatoes scores on film and series pages, with your own free OMDb key.")
                 }
+                ChannelLogosSection()
                 Section("Check this device") {
                     NavigationLink("Test video playback") { TestPlayerView().pushedPage() }
                 }
@@ -92,6 +93,20 @@ private struct PlaylistRow: View {
         case .idle, .loading: return "\(kind) · \(playlist.host) · loading…"
         case .loaded(let loaded): return "\(kind) · \(playlist.host) · \(loaded.library.channels.count) channels"
         case .failed(let message): return message
+        }
+    }
+}
+
+/// The switch for logos from the tv-logos collection (`ChannelLogos`). Off = every channel shows
+/// its name tile, and nothing is downloaded.
+private struct ChannelLogosSection: View {
+    @AppStorage(ChannelLogos.settingKey) private var online = true
+
+    var body: some View {
+        Section {
+            Toggle("Channel logos", isOn: $online)
+        } footer: {
+            Text("Logos are found by channel name in the free tv-logos collection and downloaded when first shown. Channels without one show their name.")
         }
     }
 }
@@ -141,6 +156,9 @@ struct LicencesView: View {
             }
             Section("SwiftVLC") {
                 Text("Connects Lumen to libVLC. By Harf Labs, under the MIT License.")
+            }
+            Section("Channel logos") {
+                Text("From the tv-logos collection (github.com/tv-logo/tv-logos), shared under Creative Commons ShareAlike licences (CC BY-SA, CC BY-NC-SA). The logos are trademarks of their owners and are shown only to identify their channels.")
             }
         }
         .font(LumenFont.body)

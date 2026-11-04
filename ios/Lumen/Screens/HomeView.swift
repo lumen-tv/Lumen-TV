@@ -63,7 +63,7 @@ struct HomeView: View {
             .scrollIndicators(.hidden)
             .belowTopBar()
             .refreshable { await store.refreshEverything(playlist) }
-            .ambientBackground(tint: hero.map { NameTile.colour(for: $0.title) } ?? LumenColors.ambientCool)
+            .ambientBackground(tint: hero.map { ChannelLogos.shared.glow($0) } ?? LumenColors.ambientCool)
             .sheet(isPresented: $editingFavourites) { FavouritesEditView(playlist: playlist) }
         }
     }
@@ -143,7 +143,7 @@ struct HomeView: View {
                     Button {
                         play(channel, in: favourites)
                     } label: {
-                        ChannelArt(logoUrl: channel.logoUrl, title: channel.title, cornerRadius: 16)
+                        ChannelArt(channel: channel, cornerRadius: 16)
                             .aspectRatio(16 / 9, contentMode: .fit)
                             .overlay(alignment: .bottom) { TileProgress(channel: channel) }
                             .overlay {

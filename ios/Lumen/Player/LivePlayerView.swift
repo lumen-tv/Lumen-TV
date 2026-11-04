@@ -597,7 +597,7 @@ struct ChannelListPanel: View, Equatable {
         let on = i == index
         return Button { select(i) } label: {
             HStack(spacing: 12) {
-                ChannelLogo(url: channel.logoUrl, title: channel.title, size: 34)
+                ChannelLogo(channel: channel, size: 34)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(channel.title).font(LumenFont.inter(16, .semibold)).lineLimit(1)
                     if let now = store.nowNext(channel)?.now {
