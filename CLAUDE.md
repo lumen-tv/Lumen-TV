@@ -171,6 +171,9 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     Watching (other unfinished items, played in place by `switchTo`) and Next Episode pills. iOS 26 Liquid Glass via
     `playerGlass`, dark blur before. System font in the player. Live player unchanged.
   - Tapping the open tab again rebuilds it on its first page (`RootView.resets`, fade).
+  - iPad pill after going back (Hayat 2026-11-04: came back too late): `pushedPage()` = `PushedPage`, whose hidden
+    `PageTransitionWatcher` view controller hears UIKit's `viewWillDisappear` with `isMovingFromParent` (the start of a
+    swipe back or Back), so the pill fades in then; a cancelled swipe hides it again. Not yet run.
   - Zoom transitions (2026-11-03, not yet run): film/series pages zoom out of the tapped poster/card (iOS 18
     `.navigationTransition(.zoom)`; `vodDestinations` owns the namespace, `zoomSource(ZoomID.movie/series(id))` on posters).
     Polish (Hayat picked "zoom + all the polish"): `LumenMotion.press` spring on every button/card press (`PressStyle` in
