@@ -1,21 +1,24 @@
+import Shared
 import SwiftUI
 
-/// A channel's picture. The logo the user's provider sends for the channel, tidied by
-/// `ChannelLogos` (box removed, one size, on a tile of its own colour), or, when there's no
-/// usable logo, a tile in a deep colour picked from the channel's name with the name in white.
-/// (Until 2026-11-04 every channel had the name tile: raw provider logos came small, stretched
-/// and boxed. Hayat chose the tidied logos after seeing them on 550 real provider logos.)
+/// A channel's picture: its logo from the tv-logos collection (found by name, see `ChannelLogos`)
+/// on a deep tile of the logo's colour, or, when there's no match or the Settings switch is off,
+/// a tile in a colour picked from the channel's name with the name in white.
+/// (Until 2026-11-04 every channel had the name tile. The provider's own logos are never used:
+/// Hayat found them inconsistent even after tidying.)
 struct ChannelArt: View {
-    let logoUrl: String?
-    let title: String
+    let channel: LiveChannel
     var cornerRadius: CGFloat = 10
-    @State private var loaded: (url: String, result: ChannelLogos.Lookup)?
+    @AppStorage(ChannelLogos.settingKey) private var online = true
+    @State private var loaded: (key: String, result: ChannelLogos.Lookup)?
 
     var body: some View {
+        let key = channel.key
+        let title = channel.title
         GeometryReader { geo in
             ZStack {
-                if let logo = current {
-                    LogoTile(logo: logo, size: geo.size)
+                if let art = art(key) {
+                    LogoTile(art: art, size: geo.size)
                         .transition(.opacity)
                 } else {
                     NameTile(title: title, height: geo.size.height)
@@ -24,19 +27,19 @@ struct ChannelArt: View {
             .frame(width: geo.size.width, height: geo.size.height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
-        .task(id: logoUrl) {
-            guard let logoUrl, !logoUrl.isEmpty, ChannelLogos.shared.cached(logoUrl) == nil else { return }
-            let result = await ChannelLogos.shared.logo(logoUrl)
+        .task(id: online ? key : "") {
+            guard online, ChannelLogos.shared.cached(channel) == nil else { return }
+            let result = await ChannelLogos.shared.logo(channel)
             // Fades from the name tile to the logo the first time; afterwards it's in memory
             // and shows at once.
-            withAnimation(.easeOut(duration: 0.25)) { loaded = (logoUrl, result) }
+            withAnimation(.easeOut(duration: 0.25)) { loaded = (key, result) }
         }
     }
 
-    private var current: TidyLogo? {
-        guard let logoUrl else { return nil }
-        let result = ChannelLogos.shared.cached(logoUrl) ?? (loaded?.url == logoUrl ? loaded?.result : nil)
-        if case .logo(let logo)? = result { return logo }
+    private func art(_ key: String) -> ChannelLogoArt? {
+        guard online else { return nil }
+        let result = ChannelLogos.shared.cached(channel) ?? (loaded?.key == key ? loaded?.result : nil)
+        if case .logo(let art)? = result { return art }
         return nil
     }
 }

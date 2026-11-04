@@ -166,7 +166,7 @@ struct ChannelRows: View {
                 playing = PlayerRoute(channels: channels, index: index)
             } label: {
                 HStack(spacing: 14) {
-                    ChannelLogo(url: channel.logoUrl, title: channel.title, size: 40)
+                    ChannelLogo(channel: channel, size: 40)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 8) {
                             Text(channel.title).font(LumenFont.headline).lineLimit(1)
@@ -255,7 +255,7 @@ struct FavouritesEditView: View {
             List {
                 ForEach(channels, id: \.key) { channel in
                     HStack(spacing: 14) {
-                        ChannelLogo(url: channel.logoUrl, title: channel.title, size: 36)
+                        ChannelLogo(channel: channel, size: 36)
                         Text(channel.title).lineLimit(1)
                     }
                 }
@@ -303,12 +303,11 @@ struct PlayerRoute: Identifiable {
 
 /// A small 16:9 channel picture for rows and the player bar.
 struct ChannelLogo: View {
-    let url: String?
-    let title: String
+    let channel: LiveChannel
     var size: CGFloat = 44
 
     var body: some View {
-        ChannelArt(logoUrl: url, title: title, cornerRadius: 8)
+        ChannelArt(channel: channel, cornerRadius: 8)
             .frame(width: size * 16 / 9, height: size)
     }
 }

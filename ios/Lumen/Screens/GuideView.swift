@@ -298,7 +298,7 @@ struct GuideView: View {
             // The channel stays at the left edge; the programmes vanish as they scroll under it.
             .mask(alignment: .topLeading) { visibleRightOfColumn(leading) }
             Button { play(channel, in: currentRows) } label: {
-                ChannelArt(logoUrl: channel.logoUrl, title: channel.title, cornerRadius: 9)
+                ChannelArt(channel: channel, cornerRadius: 9)
                     .frame(width: tileWidth, height: rowHeight - 12)
             }
             .buttonStyle(TileButtonStyle())
@@ -395,7 +395,7 @@ struct GuideView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if let channel {
                 ZStack(alignment: .topLeading) {
-                    ChannelArt(logoUrl: channel.logoUrl, title: channel.title, cornerRadius: 16)
+                    ChannelArt(channel: channel, cornerRadius: 16)
                     PlayerLayerView(player: preview.player)
                         .opacity(preview.isBuffering ? 0 : 1)
                         .animation(.easeOut(duration: 0.3), value: preview.isBuffering)
@@ -466,7 +466,7 @@ struct GuideView: View {
         guard let key = selected?.channelKey, let playlist = store.selected,
               case .loaded(let loaded) = store.state(of: playlist), let channel = loaded.byKey[key]
         else { return LumenColors.ambientCool }
-        return ChannelLogos.shared.glow(logoUrl: channel.logoUrl, title: channel.title)
+        return ChannelLogos.shared.glow(channel)
     }
 
     private func title(_ source: Source?, _ loaded: LoadedLibrary) -> String {
