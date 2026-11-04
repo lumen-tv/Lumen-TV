@@ -173,7 +173,8 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   - Tapping the open tab again rebuilds it on its first page (`RootView.resets`, fade).
   - iPad pill after going back (Hayat 2026-11-04: came back too late): `pushedPage()` = `PushedPage`, whose hidden
     `PageTransitionWatcher` view controller hears UIKit's `viewWillDisappear` with `isMovingFromParent` (the start of a
-    swipe back or Back), so the pill fades in then; a cancelled swipe hides it again. Not yet run.
+    swipe back or Back), so the pill fades in then; a cancelled swipe hides it again. Backup (build 11): it also adds a
+    target to the navigation controller's `interactivePopGestureRecognizer` and starts on `.began`. Not yet run.
   - Zoom transitions (2026-11-03, not yet run): film/series pages zoom out of the tapped poster/card (iOS 18
     `.navigationTransition(.zoom)`; `vodDestinations` owns the namespace, `zoomSource(ZoomID.movie/series(id))` on posters).
     Polish (Hayat picked "zoom + all the polish"): `LumenMotion.press` spring on every button/card press (`PressStyle` in

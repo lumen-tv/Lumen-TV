@@ -529,6 +529,7 @@ private struct PageTransitionWatcher: UIViewControllerRepresentable {
 
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated)
+            leavingNow = false
             leaving?(false)
         }
 
@@ -537,10 +538,44 @@ private struct PageTransitionWatcher: UIViewControllerRepresentable {
             // Only for going back (this page is being removed), not for a page pushed on top or a
             // player covering it.
             guard let page = pageController, page.isMovingFromParent else { return }
+            startLeaving(transitionCoordinator)
+        }
+
+        // Belt and braces: also listen to the navigation stack's own edge-swipe gesture, in case
+        // SwiftUI passes `viewWillDisappear` on to this view controller late.
+        private weak var hookedGesture: UIGestureRecognizer?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard hookedGesture == nil, let gesture = pageController?.navigationController?.interactivePopGestureRecognizer else { return }
+            gesture.addTarget(self, action: #selector(swipeBack(_:)))
+            hookedGesture = gesture
+        }
+
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            hookedGesture?.removeTarget(self, action: #selector(swipeBack(_:)))
+            hookedGesture = nil
+        }
+
+        @objc private func swipeBack(_ gesture: UIGestureRecognizer) {
+            guard gesture.state == .began, let page = pageController,
+                  let coordinator = page.navigationController?.transitionCoordinator,
+                  coordinator.viewController(forKey: .from) === page else { return }
+            startLeaving(coordinator)
+        }
+
+        private var leavingNow = false
+
+        private func startLeaving(_ coordinator: UIViewControllerTransitionCoordinator?) {
+            guard !leavingNow else { return }
+            leavingNow = true
             withAnimation(.easeOut(duration: 0.2)) { leaving?(true) }
             // A swipe let go of early: the page stays, so the pill goes again.
-            transitionCoordinator?.notifyWhenInteractionChanges { [weak self] context in
-                if context.isCancelled { withAnimation(.easeOut(duration: 0.2)) { self?.leaving?(false) } }
+            coordinator?.notifyWhenInteractionChanges { [weak self] context in
+                guard context.isCancelled else { return }
+                self?.leavingNow = false
+                withAnimation(.easeOut(duration: 0.2)) { self?.leaving?(false) }
             }
         }
 
