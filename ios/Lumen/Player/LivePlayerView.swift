@@ -21,6 +21,8 @@ struct LivePlayerView: View {
     @State private var listOpen = false
     /// How far the list has been dragged (in from the edge, or back out) while a finger is down.
     @State private var listDrag: CGFloat = 0
+    @State private var volume = SystemVolume()
+    @State private var nowPlaying: UUID?
 
     /// iPad only (Hayat 2026-11-02): an iPhone screen is too small to give a third of it to a list.
     private var listAllowed: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular && channels.count > 1 }
@@ -93,8 +95,12 @@ struct LivePlayerView: View {
             model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
             UIApplication.shared.isIdleTimerDisabled = true
             scheduleHide()
+            showNowPlaying()
         }
+        .onChange(of: index) { _, _ in showNowPlaying() }
+        .onChange(of: model.paused) { _, _ in updateNowPlaying() }
         .onDisappear {
+            if let nowPlaying { NowPlaying.shared.end(nowPlaying) }
             pip.stop()
             vlcPiP?.stop()
             model.stop()
@@ -102,78 +108,134 @@ struct LivePlayerView: View {
         }
     }
 
-    /// Like the TV's info overlay: close and AirPlay at the top; channel, LIVE and the hint over a
-    /// dark fade at the bottom.
+    /// In the film player's style (Apple's player, Hayat 2026-11-03): close and channel list ·
+    /// Picture in Picture · AirPlay top left, volume top right; previous channel / pause / next
+    /// channel in the middle; the channel, what's on with its progress, and what's next below.
     private var chrome: some View {
         ZStack {
-            LinearGradient(
-                stops: [
-                    .init(color: .black.opacity(0.55), location: 0),
-                    .init(color: .clear, location: 0.25),
-                    .init(color: .clear, location: 0.55),
-                    .init(color: .black.opacity(0.75), location: 1),
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+            Color.black.opacity(0.35).ignoresSafeArea().allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    CircleGlassButton(systemImage: "xmark", label: "Close", size: 44, fill: .black.opacity(0.35)) { dismiss() }
-                    if listAllowed {
-                        CircleGlassButton(systemImage: "list.bullet", label: "Channel list", size: 44, fill: .black.opacity(0.35)) {
-                            openList()
+                HStack(spacing: 12) {
+                    PlayerCircleButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    PlayerCapsule {
+                        if listAllowed {
+                            Button { openList() } label: { PlayerIcon(systemImage: "list.bullet") }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Channel list")
                         }
-                        .padding(.leading, 10)
+                        if model.usesVLC, let vlcPiP {
+                            Button { vlcPiP.toggle() } label: { PlayerIcon(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter") }
+                                .buttonStyle(.plain)
+                                .opacity(vlcPiP.isPossible ? 1 : 0.4)
+                                .disabled(!vlcPiP.isPossible)
+                                .accessibilityLabel("Picture in Picture")
+                        } else if pip.isSupported && !model.usesVLC {
+                            Button { pip.toggle() } label: { PlayerIcon(systemImage: pip.isActive ? "pip.exit" : "pip.enter") }
+                                .buttonStyle(.plain)
+                                .opacity(pip.isPossible ? 1 : 0.4)
+                                .disabled(!pip.isPossible)
+                                .accessibilityLabel("Picture in Picture")
+                        }
+                        AirPlayButton().frame(width: 52, height: 44).accessibilityLabel("AirPlay")
                     }
-                    Spacer()
-                    if model.usesVLC, let vlcPiP {
-                        CircleGlassButton(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
-                                          size: 44, fill: .black.opacity(0.35)) { vlcPiP.toggle() }
-                            .opacity(vlcPiP.isPossible ? 1 : 0.4)
-                            .disabled(!vlcPiP.isPossible)
-                            .padding(.trailing, 10)
-                    } else if pip.isSupported && !model.usesVLC {
-                        CircleGlassButton(systemImage: pip.isActive ? "pip.exit" : "pip.enter", label: "Picture in Picture",
-                                          size: 44, fill: .black.opacity(0.35)) { pip.toggle() }
-                            .opacity(pip.isPossible ? 1 : 0.4)
-                            .disabled(!pip.isPossible)
-                            .padding(.trailing, 10)
-                    }
-                    AirPlayButton()
-                        .frame(width: 44, height: 44)
-                        .glass(cornerRadius: 22, fill: .black.opacity(0.35))
+                    Spacer(minLength: 12)
+                    VolumeCapsule(volume: volume, width: listAllowed ? 190 : 150, touched: scheduleHide)
                 }
-                Spacer()
-                HStack(spacing: 14) {
-                    ChannelLogo(url: channel.logoUrl, title: channel.title, size: 46)
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 10) {
-                            Text(channel.title).font(LumenFont.inter(24, .semibold)).lineLimit(1)
-                            if let quality = channel.quality { QualityTag(text: quality) }
-                            HStack(spacing: 5) {
-                                Circle().fill(LumenColors.accent).frame(width: 8, height: 8)
-                                Text("LIVE").font(LumenFont.inter(13, .semibold)).foregroundStyle(LumenColors.accent)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: listAllowed ? 110 : 64) {
+                    if channels.count > 1 {
+                        PlayerCircleButton(systemImage: "backward.end.fill", label: "Previous channel", size: 72, iconSize: 28) { zap(by: -1) }
+                    }
+                    PlayerCircleButton(systemImage: model.paused ? "play.fill" : "pause.fill",
+                                       label: model.paused ? "Play" : "Pause", size: 104, iconSize: 44) {
+                        model.togglePause()
+                        scheduleHide()
+                    }
+                    if channels.count > 1 {
+                        PlayerCircleButton(systemImage: "forward.end.fill", label: "Next channel", size: 72, iconSize: 28) { zap(by: 1) }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 10) {
+                    Text(channel.title).font(.system(size: listAllowed ? 28 : 24, weight: .bold)).lineLimit(1)
+                    if let quality = channel.quality { QualityTag(text: quality) }
+                    HStack(spacing: 5) {
+                        Circle().fill(LumenColors.accent).frame(width: 8, height: 8)
+                        Text("LIVE").font(.system(size: 13, weight: .bold)).foregroundStyle(LumenColors.accent)
+                    }
+                }
+                .foregroundStyle(.white)
+                // What's on, with how far through it is, and what's next (a minute at a time).
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    let guide = store.nowNext(channel)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let now = guide?.now {
+                            Text(now.title)
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .lineLimit(1)
+                            HStack(spacing: 14) {
+                                Text(now.startDate.formatted(date: .omitted, time: .shortened))
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(.white.opacity(0.3))
+                                        Capsule().fill(.white).frame(width: max(6, geo.size.width * now.progress(at: context.date)))
+                                    }
+                                    .frame(height: 6)
+                                    .frame(maxHeight: .infinity)
+                                }
+                                .frame(height: 20)
+                                Text(now.stopDate.formatted(date: .omitted, time: .shortened))
                             }
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .monospacedDigit()
+                        } else {
+                            Text(programmeLine).font(.system(size: 17, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                         }
-                        Text(programmeLine)
-                            .font(LumenFont.inter(15))
-                            .foregroundStyle(LumenColors.textSecondary)
-                            .lineLimit(1)
+                        if let next = guide?.next {
+                            Text("Next: \(next.title) · \(next.startDate.formatted(date: .omitted, time: .shortened))")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
                     }
+                    .padding(.top, 6)
                 }
-                .foregroundStyle(LumenColors.textPrimary)
-                Text(channels.count > 1 ? "Swipe up or down to change channel" : "Tap to hide")
-                    .font(LumenFont.inter(14))
-                    .foregroundStyle(LumenColors.textSecondary)
-                    .padding(.top, 14)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.horizontal, listAllowed ? 32 : 20)
+            .padding(.vertical, listAllowed ? 20 : 14)
         }
+        .background(HiddenVolumeView(volume: volume).frame(width: 1, height: 1))
         .accessibilityAction(named: "Next channel") { zap(by: 1) }
         .accessibilityAction(named: "Previous channel") { zap(by: -1) }
+    }
+
+    private func showNowPlaying() {
+        var controls = NowPlaying.Controls(
+            togglePause: { model.togglePause() },
+            play: { if model.paused { model.togglePause() } },
+            pause: { if !model.paused { model.togglePause() } }
+        )
+        if channels.count > 1 {
+            controls.nextTrack = { zap(by: 1) }
+            controls.previousTrack = { zap(by: -1) }
+        }
+        let token = NowPlaying.shared.begin(title: channel.title, subtitle: store.nowNext(channel)?.now?.title,
+                                            artwork: nil, live: true, controls: controls)
+        nowPlaying = token
+        updateNowPlaying()
+    }
+
+    private func updateNowPlaying() {
+        guard let nowPlaying else { return }
+        NowPlaying.shared.update(nowPlaying, position: nil, duration: nil, playing: !model.paused)
     }
 
     /// "EastEnders · 7:30 – 8:00 PM", or "3 of 12" without a guide.
@@ -335,6 +397,7 @@ final class LivePlayerModel {
         error = nil
         isBuffering = true
         hasPicture = false
+        paused = false
         pending = Task {
             if debounce {
                 try? await Task.sleep(for: .milliseconds(350))
@@ -364,6 +427,19 @@ final class LivePlayerModel {
             }
             player.replaceCurrentItem(with: item)
             player.play()
+        }
+    }
+
+    /// Paused by you (live TV can pause too; it carries on from where it stopped while the
+    /// provider still has it, else from live).
+    private(set) var paused = false
+
+    func togglePause() {
+        paused.toggle()
+        if usesVLC {
+            if paused { vlc.pause() } else { vlc.play() }
+        } else {
+            if paused { player.pause() } else { player.play() }
         }
     }
 

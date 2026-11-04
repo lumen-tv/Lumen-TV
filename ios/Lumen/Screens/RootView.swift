@@ -30,6 +30,10 @@ struct RootView: View {
     /// The glow colour each tab's top page shows, painted behind the iPad's pill so it meets the
     /// page without a line.
     @State private var tints = AmbientTints()
+    @Environment(PlaylistStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
+    /// A film or episode started from the Home Screen icon's "Continue watching".
+    @State private var quickPlay: QuickPlay?
 
     private var wide: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular }
 
@@ -98,6 +102,41 @@ struct RootView: View {
                 tab = saved
             }
         }
+        // The Home Screen icon's menu (`QuickActions`): at launch or coming back to the app.
+        .onChange(of: QuickActions.shared.pending, initial: true) { _, action in
+            guard let action else { return }
+            QuickActions.shared.pending = nil
+            Task { await perform(action) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { QuickActions.shared.refresh(store: store) }
+        }
+        .fullScreenCover(item: $quickPlay) { VodPlayerView(playback: $0.playback, playlist: $0.playlist) }
+    }
+
+    private func perform(_ action: QuickActions.Action) async {
+        switch action {
+        case .search:
+            if !searching { startSearch() }
+        case .resume(let key, let playlistID):
+            guard let playlist = store.playlists.first(where: { $0.id == playlistID }),
+                  let item = store.progress(key, in: playlist) else { return }
+            select(item.kind == .movie ? .movies : .series)
+            // At launch the films and series are still being read: wait for them (up to 20 s).
+            for _ in 0..<80 {
+                if case .loaded = store.vodState(of: playlist) { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            if let playback = await resumePlayback(item, store: store, playlist: playlist) {
+                quickPlay = QuickPlay(playback: playback, playlist: playlist)
+            }
+        }
+    }
+
+    private struct QuickPlay: Identifiable {
+        let playback: VodPlayback
+        let playlist: Playlist
+        var id: UUID { playback.id }
     }
 
     private func select(_ item: AppTab) {

@@ -34,10 +34,18 @@ enum ScreenOrientation {
     }
 }
 
-/// Only here to tell iOS which orientations are allowed right now (see `ScreenOrientation`).
+/// Tells iOS which orientations are allowed right now (see `ScreenOrientation`), and gives the
+/// window a scene delegate for the Home Screen icon's menu (`QuickActions`).
 final class LumenAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         MainActor.assumeIsolated { ScreenOrientation.mask }
+    }
+
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = LumenSceneDelegate.self
+        return configuration
     }
 }
 

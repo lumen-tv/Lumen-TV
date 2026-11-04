@@ -30,6 +30,9 @@ final class VLCEngine {
 
     func pause() { player.pause() }
 
+    /// Pinch to fill: the picture covers the whole screen (edges cropped) instead of fitting.
+    func setFill(_ fill: Bool) { player.aspectRatio = fill ? .fill : .default }
+
     /// Playback speed (1 = normal). VLC applies it a moment later.
     func setRate(_ rate: Float) { try? player.setPlaybackRate(PlaybackRate(rate)) }
     func stop() { player.stop() }
