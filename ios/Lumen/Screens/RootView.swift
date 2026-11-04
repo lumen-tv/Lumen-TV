@@ -1,0 +1,592 @@
+import SwiftUI
+
+/// Lumen's tabs, as on the TV: Live TV · Movies · Series · My List, plus Settings.
+/// One app for iPhone and iPad: a full-width iPad window gets the TV's glass pill at the top
+/// with the clock on the right; iPhone (and narrow iPad split screen) gets a floating glass
+/// bar at the bottom, where the thumb is. The system TabView isn't used because its look can't
+/// be changed to match the TV.
+struct RootView: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var tab: AppTab = .live
+    /// The tab open when the app was last used, opened again at launch (not Settings).
+    @AppStorage("lastTab") private var lastTab = AppTab.live.rawValue
+    /// Tabs opened so far. Each stays alive once opened (hidden, not removed), so switching back
+    /// keeps its scroll position and pushed pages, as a real tab bar does.
+    @State private var opened: Set<AppTab> = [.live]
+    /// Bumped when the open tab's button is tapped again: the tab is rebuilt on its first page
+    /// (pushed pages gone, back at the top), as in Apple's own apps (Hayat 2026-11-03).
+    @State private var resets: [AppTab: Int] = [:]
+    /// The bar is in search mode: it has turned into a search field and the results cover the
+    /// open tab (no separate search page, Hayat 2026-10-31).
+    @State private var searching = false
+    @State private var query = ""
+    /// Film and series pages opened from the results.
+    @State private var searchPath = NavigationPath()
+    /// A full-screen page in the open tab (the iPhone TV guide) asked for the bar to go.
+    @State private var barHidden = false
+    /// iPad: a pushed page is showing, so the floating pill steps aside for its back button.
+    @State private var topBarHidden = false
+    @State private var topBarHeight: CGFloat = 86
+    /// The glow colour each tab's top page shows, painted behind the iPad's pill so it meets the
+    /// page without a line.
+    @State private var tints = AmbientTints()
+    @Environment(PlaylistStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
+    /// A film or episode started from the Home Screen icon's "Continue watching".
+    @State private var quickPlay: QuickPlay?
+
+    private var wide: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular }
+
+    var body: some View {
+        // iPad: the pill floats over the page, as on the TV, so each page's colours and pictures
+        // run up to the top of the screen. Tab pages leave room for it themselves
+        // (`.belowTopBar()`); pushed pages (a film, All channels, the guide…) hide it and use
+        // their back button (`.pushedPage()`). An earlier version put the pill in its own band
+        // above the pages, which read as a separate strip (Hayat 2026-10-31).
+        ZStack(alignment: .top) {
+            ZStack {
+                ForEach(AppTab.allCases) { item in
+                    if opened.contains(item) {
+                        screen(for: item)
+                            .id(resets[item, default: 0])
+                            .transition(.opacity)
+                            .opacity(tab == item ? 1 : 0)
+                            .allowsHitTesting(tab == item)
+                            .accessibilityHidden(tab != item)
+                            // Only the open tab may hide the bar.
+                            .transformPreference(TabBarHiddenKey.self) { if tab != item { $0 = false } }
+                            .transformPreference(TopBarHiddenKey.self) { if tab != item { $0 = false } }
+                            .environment(\.ambientTab, item.rawValue)
+                    }
+                }
+                if searching {
+                    SearchView(query: query, path: $searchPath)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.topBarSpace, wide ? topBarHeight : 0)
+            if wide, !topBarHidden {
+                TopTabBar(tab: tab, select: select, searching: searching, query: $query,
+                          search: startSearch, cancel: endSearch)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBarHeight = $0 }
+                    .transition(.opacity)
+            }
+        }
+        // Only shows where a page doesn't cover the screen. `.id(tab)`: a tab switch swaps it at
+        // once, like the pages themselves.
+        .background(AmbientBackground(tint: tints.tint(for: tab.rawValue) ?? LumenColors.ambientCool).id(tab))
+        .environment(\.ambientTints, tints)
+        .onPreferenceChange(TabBarHiddenKey.self) { barHidden = $0 }
+        .onPreferenceChange(TopBarHiddenKey.self) { topBarHidden = $0 }
+        .animation(.easeOut(duration: 0.2), value: topBarHidden)
+        // iPhone: the floating bar; safeAreaInset makes scroll views inside every tab end above it.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // A film opened from the results has the whole screen, with its back button.
+            if !wide, !barHidden, !(searching && !searchPath.isEmpty) {
+                BottomTabBar(tab: tab, select: select, searching: searching, query: $query,
+                             search: startSearch, cancel: endSearch)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: barHidden)
+        .hideTopScrollEdgeEffect()
+        // The keyboard covers the bar instead of pushing it up, except while searching: then
+        // the field rides up on top of the keyboard.
+        .ignoresSafeArea(.keyboard, edges: searching ? [] : .bottom)
+        .environment(\.lumenWide, wide)
+        .environment(\.openSearch, startSearch)
+        .onAppear {
+            if let saved = AppTab(rawValue: lastTab), saved != tab {
+                opened.insert(saved)
+                tab = saved
+            }
+        }
+        // The Home Screen icon's menu (`QuickActions`): at launch or coming back to the app.
+        .onChange(of: QuickActions.shared.pending, initial: true) { _, action in
+            guard let action else { return }
+            QuickActions.shared.pending = nil
+            Task { await perform(action) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { QuickActions.shared.refresh(store: store) }
+        }
+        .fullScreenCover(item: $quickPlay) { VodPlayerView(playback: $0.playback, playlist: $0.playlist) }
+    }
+
+    private func perform(_ action: QuickActions.Action) async {
+        switch action {
+        case .search:
+            if !searching { startSearch() }
+        case .resume(let key, let playlistID):
+            guard let playlist = store.playlists.first(where: { $0.id == playlistID }),
+                  let item = store.progress(key, in: playlist) else { return }
+            select(item.kind == .movie ? .movies : .series)
+            // At launch the films and series are still being read: wait for them (up to 20 s).
+            for _ in 0..<80 {
+                if case .loaded = store.vodState(of: playlist) { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            if let playback = await resumePlayback(item, store: store, playlist: playlist) {
+                quickPlay = QuickPlay(playback: playback, playlist: playlist)
+            }
+        }
+    }
+
+    private struct QuickPlay: Identifiable {
+        let playback: VodPlayback
+        let playlist: Playlist
+        var id: UUID { playback.id }
+    }
+
+    private func select(_ item: AppTab) {
+        if searching {
+            endSearch()
+        } else if item == tab {
+            // Already open: back to its first page.
+            Haptics.select()
+            withAnimation(.easeOut(duration: 0.25)) { resets[item, default: 0] += 1 }
+            return
+        }
+        if item != tab { Haptics.select() }
+        opened.insert(item)
+        tab = item
+        if item != .settings { lastTab = item.rawValue }
+    }
+
+    private func startSearch() {
+        withAnimation(.spring(duration: 0.35, bounce: 0.15)) { searching = true }
+    }
+
+    private func endSearch() {
+        withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+            searching = false
+            query = ""
+            searchPath = NavigationPath()
+        }
+    }
+
+    @ViewBuilder
+    private func screen(for item: AppTab) -> some View {
+        switch item {
+        case .live: HomeView()
+        case .movies: VodTabView(kind: .movies)
+        case .series: VodTabView(kind: .series)
+        case .myList: MyListView()
+        case .settings: SettingsView()
+        }
+    }
+}
+
+enum AppTab: String, CaseIterable, Identifiable {
+    case live, movies, series, myList, settings
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .live: "Live TV"
+        case .movies: "Movies"
+        case .series: "Series"
+        case .myList: "My List"
+        case .settings: "Settings"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .live: "tv"
+        case .movies: "film"
+        case .series: "play.rectangle.on.rectangle"
+        case .myList: "heart"
+        case .settings: "gearshape"
+        }
+    }
+}
+
+/// iPhone: a floating glass bar; the open tab is a white pill with dark text (the TV's focus look).
+struct BottomTabBar: View {
+    let tab: AppTab
+    let select: (AppTab) -> Void
+    let searching: Bool
+    @Binding var query: String
+    let search: () -> Void
+    let cancel: () -> Void
+    @Namespace private var bar
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if searching {
+                // The tabs make way and the bar itself becomes the search field.
+                BarSearchField(text: $query, font: LumenFont.inter(17, .regular))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .padding(.horizontal, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color(hex: 0x282A32).opacity(0.6), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    .matchedGeometryEffect(id: "bar", in: bar)
+                    .transition(.opacity)
+                roundButton("xmark", label: "Cancel search", action: cancel)
+                    .matchedGeometryEffect(id: "button", in: bar)
+            } else {
+                tabs
+                    .matchedGeometryEffect(id: "bar", in: bar)
+                    .transition(.opacity)
+                // Search sits apart from the tabs in its own glass circle.
+                roundButton("magnifyingglass", label: "Search", action: search)
+                    .matchedGeometryEffect(id: "button", in: bar)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+        .animation(.easeOut(duration: 0.18), value: tab)
+    }
+
+    private func roundButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(LumenColors.textPrimary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 58, height: 58)
+                .background(.ultraThinMaterial, in: Circle())
+                .background(Color(hex: 0x282A32).opacity(0.6), in: Circle())
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 0) {
+            ForEach(AppTab.allCases) { item in
+                let on = item == tab
+                Button { select(item) } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: on ? item.icon + ".fill" : item.icon)
+                            .font(.system(size: 17, weight: .medium))
+                            .frame(height: 20)
+                        Text(item.title).font(LumenFont.inter(11, .medium)).lineLimit(1).fixedSize()
+                    }
+                    .foregroundStyle(on ? LumenColors.background : LumenColors.textSecondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 7)
+                    .background(on ? Color.white : Color.clear, in: Capsule())
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 5)
+        // A real blur here (cheap on a phone), tinted dark, so rows scrolling under stay readable.
+        .background(.ultraThinMaterial, in: Capsule())
+        .background(Color(hex: 0x282A32).opacity(0.6), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+    }
+}
+
+/// iPad: the TV's top bar. One centred glass pill (search · tabs · settings) and the clock.
+struct TopTabBar: View {
+    let tab: AppTab
+    let select: (AppTab) -> Void
+    let searching: Bool
+    @Binding var query: String
+    let search: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            HStack(spacing: 4) {
+                if searching {
+                    // The pill widens into a search field; the tabs fold away until Cancel.
+                    BarSearchField(text: $query, font: LumenFont.inter(17, .regular))
+                        .padding(.leading, 14)
+                        .frame(width: 460)
+                        .transition(.opacity)
+                    pillButton(on: true, label: "Cancel", action: cancel) {
+                        Text("Cancel").font(LumenFont.inter(17, .medium))
+                    }
+                    .transition(.opacity)
+                } else {
+                    pillButton(on: false, label: "Search", action: search) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 16, weight: .semibold))
+                    }
+                    ForEach(AppTab.allCases.filter { $0 != .settings }) { item in
+                        pillButton(on: item == tab, label: item.title, action: { select(item) }) {
+                            Text(item.title).font(LumenFont.inter(17, .medium))
+                        }
+                    }
+                    .transition(.opacity)
+                    pillButton(on: tab == .settings, label: "Settings", action: { select(.settings) }) {
+                        Image(systemName: "gearshape").font(.system(size: 17, weight: .semibold))
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .frame(height: 41)
+            .padding(6)
+            .background(.ultraThinMaterial.opacity(0.6), in: Capsule())
+            .glass(cornerRadius: 999)
+            HStack {
+                Spacer()
+                ClockView()
+            }
+        }
+        .padding(.horizontal, 48)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .animation(.easeOut(duration: 0.18), value: tab)
+    }
+
+    private func pillButton<C: View>(on: Bool, label: String, action: @escaping () -> Void, @ViewBuilder content: () -> C) -> some View {
+        Button(action: action) {
+            content()
+                .foregroundStyle(on ? LumenColors.textPrimary : LumenColors.textSecondary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 9)
+                .background(on ? Color.white.opacity(0.16) : Color.clear, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// The search field inside the tab bar: takes the keyboard as soon as it appears.
+struct BarSearchField: View {
+    @Binding var text: String
+    let font: Font
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(LumenColors.textSecondary)
+            TextField("Search", text: $text,
+                      prompt: Text("Channels, films and series").foregroundStyle(LumenColors.textTertiary))
+                .font(font)
+                .foregroundStyle(LumenColors.textPrimary)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($focused)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(LumenColors.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear")
+            }
+        }
+        .padding(.horizontal, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+        .onAppear {
+            // After the bar's expand animation has started, so the keyboard doesn't fight it.
+            // Not when coming back from a film opened from the results.
+            if text.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focused = true } }
+        }
+    }
+}
+
+/// A tab with nothing in it yet: Lumen ships with no channels (an App Store rule), so this is
+/// what everyone sees first.
+struct EmptyTab: View {
+    let title: String
+    let message: String
+    @State private var addingPlaylist = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "sparkles.tv")
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(LumenColors.textSecondary)
+            Text("Nothing here yet")
+                .font(LumenFont.title)
+                .foregroundStyle(LumenColors.textPrimary)
+            Text(message)
+                .font(LumenFont.body)
+                .foregroundStyle(LumenColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            Button("Add playlist") { addingPlaylist = true }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(.top, 8)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $addingPlaylist) { AddPlaylistView() }
+    }
+}
+
+/// Loading, failed and "nothing to show" states, centred.
+struct StatusMessage: View {
+    let text: String
+    var loading = false
+    var retry: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if loading { LoadingLine(maxWidth: 160) }
+            Text(text)
+                .font(LumenFont.body)
+                .foregroundStyle(LumenColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            if let retry {
+                Button("Try again", action: retry).buttonStyle(GlassButtonStyle())
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Set by a page that wants the whole screen on iPhone (`.tabBarHidden()`), like a pushed
+/// page hiding the system tab bar. The bar comes back when the page is popped.
+struct TabBarHiddenKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+extension View {
+    func tabBarHidden(_ hidden: Bool = true) -> some View {
+        preference(key: TabBarHiddenKey.self, value: hidden)
+    }
+}
+
+/// iPad: set by pushed pages, which hide the floating top pill (they have a back button instead).
+struct TopBarHiddenKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+extension View {
+    /// A page pushed inside a tab: on iPad the top pill steps aside for its back button.
+    func pushedPage() -> some View {
+        modifier(PushedPage())
+    }
+
+    /// A tab's first page: on iPad its scrolling content starts below the floating pill, while
+    /// its background still runs up behind it.
+    func belowTopBar() -> some View {
+        modifier(BelowTopBar())
+    }
+}
+
+private struct BelowTopBar: ViewModifier {
+    @Environment(\.topBarSpace) private var space
+
+    func body(content: Content) -> some View {
+        content.contentMargins(.top, space, for: .scrollContent)
+    }
+}
+
+/// Hides the iPad's pill while the page is up, and gives it back the moment the page starts
+/// leaving: as soon as a swipe back (or the back button) begins, not when the page has finished
+/// going, which SwiftUI waits for (Hayat 2026-11-04: the pill took too long to come back). A swipe
+/// that's let go of halfway, so the page stays, hides it again.
+private struct PushedPage: ViewModifier {
+    @State private var leaving = false
+
+    func body(content: Content) -> some View {
+        content
+            .preference(key: TopBarHiddenKey.self, value: !leaving)
+            .background(PageTransitionWatcher { leaving = $0 }.frame(width: 0, height: 0))
+    }
+}
+
+/// A tiny UIKit view controller inside the page: UIKit tells it when its page starts to
+/// appear or disappear, including at the start of an interactive swipe back, which SwiftUI
+/// has no hook for.
+private struct PageTransitionWatcher: UIViewControllerRepresentable {
+    let leaving: (Bool) -> Void
+
+    func makeUIViewController(context: Context) -> Watcher {
+        let watcher = Watcher()
+        watcher.leaving = leaving
+        return watcher
+    }
+
+    func updateUIViewController(_ watcher: Watcher, context: Context) {
+        watcher.leaving = leaving
+    }
+
+    final class Watcher: UIViewController {
+        var leaving: ((Bool) -> Void)?
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.isUserInteractionEnabled = false
+            view.backgroundColor = .clear
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            leavingNow = false
+            leaving?(false)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            // Only for going back (this page is being removed), not for a page pushed on top or a
+            // player covering it.
+            guard let page = pageController, page.isMovingFromParent else { return }
+            startLeaving(transitionCoordinator)
+        }
+
+        // Belt and braces: also listen to the navigation stack's own edge-swipe gesture, in case
+        // SwiftUI passes `viewWillDisappear` on to this view controller late.
+        private weak var hookedGesture: UIGestureRecognizer?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard hookedGesture == nil, let gesture = pageController?.navigationController?.interactivePopGestureRecognizer else { return }
+            gesture.addTarget(self, action: #selector(swipeBack(_:)))
+            hookedGesture = gesture
+        }
+
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            hookedGesture?.removeTarget(self, action: #selector(swipeBack(_:)))
+            hookedGesture = nil
+        }
+
+        @objc private func swipeBack(_ gesture: UIGestureRecognizer) {
+            guard gesture.state == .began, let page = pageController,
+                  let coordinator = page.navigationController?.transitionCoordinator,
+                  coordinator.viewController(forKey: .from) === page else { return }
+            startLeaving(coordinator)
+        }
+
+        private var leavingNow = false
+
+        private func startLeaving(_ coordinator: UIViewControllerTransitionCoordinator?) {
+            guard !leavingNow else { return }
+            leavingNow = true
+            withAnimation(.easeOut(duration: 0.2)) { leaving?(true) }
+            // A swipe let go of early: the page stays, so the pill goes again.
+            coordinator?.notifyWhenInteractionChanges { [weak self] context in
+                guard context.isCancelled else { return }
+                self?.leavingNow = false
+                withAnimation(.easeOut(duration: 0.2)) { self?.leaving?(false) }
+            }
+        }
+
+        /// The page's own controller: the one the navigation stack holds.
+        private var pageController: UIViewController? {
+            var current: UIViewController? = self
+            while let controller = current {
+                if controller.parent is UINavigationController { return controller }
+                current = controller.parent
+            }
+            return nil
+        }
+    }
+}

@@ -89,6 +89,9 @@ android {
 }
 
 dependencies {
+    // The code shared with the iPhone/iPad app (playlist parsing, names, keys).
+    implementation(project(":shared"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

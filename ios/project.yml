@@ -1,0 +1,106 @@
+# XcodeGen spec for the iPhone/iPad app. The .xcodeproj is generated from this file and not
+# committed (it's a large machine-written file that merges badly). Run ./generate.sh after
+# pulling, then open Lumen.xcodeproj. See docs/IOS.md.
+name: Lumen
+options:
+  bundleIdPrefix: com.hayat
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "11"
+    SWIFT_VERSION: "5.0"
+    # Build only the Mac's own chip for the Simulator, in Release too (Xcode's Run uses Release).
+    # Otherwise Xcode also asks for an Intel copy, which the shared Kotlin framework doesn't have
+    # ("Xcode Requested Architecture Not Configured in Gradle"). Phones are arm64 either way.
+    ONLY_ACTIVE_ARCH: YES
+packages:
+  # VLC 4 for films, episodes and channels Apple's player can't play (.mkv, DTS/AC3 sound, HEVC),
+  # with Picture in Picture. SwiftVLC wraps libVLC 4 (MIT; libVLC is LGPL 2.1). Needs Xcode 26.4+.
+  # It replaced VLCKit 3 (tylerjonesio/vlckit-spm 3.6) on 2026-11-02; only Player/VLCEngine.swift
+  # talks to it. The two can't be in one app (both contain libVLC).
+  SwiftVLC:
+    url: https://github.com/harflabs/SwiftVLC
+    from: 1.0.0
+# Run from Xcode builds the optimised (Release) app, including the shared Kotlin code: a Debug
+# build is unoptimised on both sides and felt laggy (Hayat 2026-11-02), as debug builds did on the
+# TV. To debug with breakpoints, set Run back to Debug in Product → Scheme → Edit Scheme.
+schemes:
+  Lumen:
+    build:
+      targets:
+        Lumen: all
+    run:
+      config: Release
+    profile:
+      config: Release
+    archive:
+      config: Release
+targets:
+  Lumen:
+    type: application
+    platform: iOS
+    sources:
+      - path: Lumen
+    dependencies:
+      - package: SwiftVLC
+    # Builds the shared Kotlin code (../shared) into Shared.framework before Swift compiles.
+    preBuildScripts:
+      - name: Build shared Kotlin code
+        script: "\"$SRCROOT/build-shared.sh\""
+        basedOnDependencyAnalysis: false
+    settings:
+      base:
+        # Where Gradle puts Shared.framework for this build (device or Simulator).
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        OTHER_LDFLAGS: ["$(inherited)", "-framework", "Shared"]
+        # The script above runs Gradle, which reads and writes outside the Xcode sandbox.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.hayat.lumen
+        PRODUCT_NAME: Lumen
+        # 1 = iPhone, 2 = iPad: one app for both.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: Lumen/Info.plist
+      properties:
+        CFBundleDisplayName: Lumen
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        # Lumen is dark only, like the TV app.
+        UIUserInterfaceStyle: Dark
+        UIAppFonts:
+          - inter_regular.ttf
+          - inter_medium.ttf
+          - inter_semibold.ttf
+        # iPhone: portrait for browsing, landscape for watching. iPad: every orientation
+        # (Apple requires it for Split View).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Lets Picture in Picture keep playing when you leave the app (and is needed for the
+        # PiP button to show). Apple allows it because Lumen really plays video with sound.
+        UIBackgroundModes:
+          - audio
+        # Most IPTV servers are plain http, and users type their own. iOS blocks http unless
+        # this is on; the App Store review notes must say why (see docs/IOS.md).
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        # Only standard HTTPS, so no export-compliance paperwork on each upload.
+        ITSAppUsesNonExemptEncryption: false

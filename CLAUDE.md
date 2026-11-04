@@ -69,6 +69,139 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
     login / Hide / Remove, plus Add playlist), TV guide, Live categories (OK hide, hold OK rename), Movie and Series
     categories (same), Ratings (the user's OMDb key), Updates, About. Live's Categories and the guide's Guide settings
     open it on their section.
+- **iPhone/iPad app.** Started 2026-10-31 (branch `claude/project-thread-avhbdn`, PR #24). Setup in `docs/IOS.md`.
+  - Phase 1 (ran on Hayat's iPhone 2026-10-31): SwiftUI app in `ios/` (XcodeGen `project.yml`, the .xcodeproj isn't
+    committed): tabs, Settings → Test video playback.
+  - Phase 2 (not yet run on a device): `shared/` Kotlin Multiplatform module. Add playlist (Xtream or M3U; get.php links
+    stored as Xtream) loads channels via `PlaylistLoader`, saves only if that works; login in the Keychain, list in
+    UserDefaults. Live TV: categories → channels (+ search), full-screen AVPlayer, swipe up/down zaps (350 ms debounce).
+    Channels reload at each launch (no on-device database yet). Live TV checked on Hayat's iPhone 2026-10-31: works.
+  - Name tiles + favourites (iOS only for now, Hayat 2026-10-31; not yet run): `ChannelArt` = always `NameTile` (Hayat
+    2026-10-31: provider logos never fit, so none at all on iOS) (style A from the TV's Play-Store plan: palette colour by FNV-1a of the name, white name). Favourites:
+    `PlaylistStore.favouriteKeys` (UserDefaults, playlist id → stable keys in order), hold/swipe a row to toggle,
+    a card row at the top of Live TV, Edit sheet to reorder/remove, the player zaps within favourites.
+  - Movies/Series (not yet run): `PlaylistLoader.loadVod/movieInfo/seriesInfo` (shared, tested), loaded after the channels
+    for Xtream playlists. `ios/Lumen/Vod/`: tabs with Continue watching + category rows (30, See all grid), film and
+    series pages, `VodPlayerView` on VLC (AVPlayer can't do mkv/DTS),
+    polled every 0.5 s. VLC 4 since 2026-11-02 (Hayat): SwiftVLC package (harflabs/SwiftVLC 1.x, MIT, libVLC 4,
+    needs Xcode 26.4+), wrapped by `Player/VLCEngine.swift` (the only file importing it; seconds, tracks as
+    index ids with -1 = off) + `VLCVideo`/`VLCPiP` (PiP for VLC films and 4K/HEVC channels). VLCKit 3 can't
+    sit beside it (both are libVLC); to go back, restore vlckit-spm 3.6 in project.yml and rewrite that file. Progress in UserDefaults (`WatchProgress`, no stream URLs: they hold the password), saved every
+    15 s and on leaving, 95% = finished, under 30 s not kept.
+  - TV look (Hayat approved mockups 2026-10-31; not yet run): one app, layout by `lumenWide` (iPad + regular width).
+    iPad: the TV's glass pill (search · Live TV · Movies · Series · My List · gear) + clock floating over the page
+    (tab pages leave room with `.belowTopBar()`; pushed pages hide it with `.pushedPage()`; a separate band above the
+    pages read as a strip, Hayat 2026-10-31); iPhone: floating glass
+    bar at the bottom. Custom tab container in `RootView` (tabs stay alive once opened). Live TV = `HomeView` (hero of the
+    last-watched favourite over a wash of its colour, Watch / All channels, 2- or 4-wide favourite tiles) →
+    `LiveChannelsView` (search, category pills, rows white while pressed). Movies/Series: title, Continue watching wide
+    cards, poster rows (no hero: Hayat 2026-10-31, nothing drives it without focus; film/series pages keep backdrops).
+    Search expands the bar itself into a field (iPad: the pill; iPhone: the bottom bar, riding above the keyboard) with Cancel, and `SearchView` results cover the open tab (no sheet, Hayat 2026-10-31). iOS 26's top scroll edge effect is off (`hideTopScrollEdgeEffect`). My List tab (`MyListView`,
+    `PlaylistStore.myList` in UserDefaults, All / Films / Series). `SearchView` = channels + films + series.
+    Ratings as plain text (provider rating, age rating).
+  - TV guide (not yet run): shared `PlaylistLoader.loadXtreamGuide/loadGuide` stream XMLTV through `XmltvReader`
+    (hand-rolled, common Kotlin; tested in `GuideTest`), keeping now − 2 h … now + 36 h for the playlist's tvg-ids, into
+    `Guide` (`nowNext`, `between`, `schedule`; epoch seconds). `.gz` guide files aren't read on iOS yet. Loaded at launch
+    after the channels. Home hero now/next + tile progress, row "now" lines, player line. `GuideView`
+    (Home → TV guide): a horizontal ScrollView holding the ruler + a vertical one (one direction per drag: Hayat found a
+    free 2-axis pan felt like an overlay), opens on the current half hour; channel column pinned with
+    `visualEffect` (render-time offset from its frame in `.scrollView(axis: .horizontal)`; a @State offset lagged a frame
+    and let programmes slide over the tiles); tap = select (iPhone details card in a bottom
+    `safeAreaInset`, above the tab bar / iPad panel with muted preview), double-tap = watch. No guide in the player.
+  - Saved on the phone (not yet run): shared `LibraryCache` writes channels/guide/VOD as JSON to Caches/Lumen/<id>-live|guide|vod.json;
+    launch shows them at once, then refreshes quietly (live + guide after 12 h, VOD after 24 h); failures keep old data.
+  - Settings (not yet run): playlist page (rename, refresh everything, change Xtream login / M3U link: saved only if the
+    channels load, blank password keeps the old; guide link; remove). Categories for Live/Movies/Series: tick = shown,
+    search, Show all / Hide all on the matches, hold/swipe to rename (UserDefaults `hiddenCategories`/`categoryLabels`,
+    keys `l:<name>`, `m:<id>`, `s:<id>`). Ratings: user's OMDb key in the Keychain (`Data/Ratings.swift`, checked first);
+    film/series pages show Rotten Tomatoes %, IMDb + votes, age as plain text, provider score only without OMDb.
+  - Player extras (not yet run): VOD remembers the audio/subtitle track name (`preferredAudioTrack`/`preferredSubtitleTrack`,
+    matched on name then language word). Live TV: Picture in Picture (`Player/PictureInPicture.swift`, button + automatic
+    on leaving the app); not for films (VLCKit has none).
+  - iCloud sync (not yet run; Hayat bought the paid account 2026-10-31): `Data/CloudSync.swift` mirrors the UserDefaults
+    JSON keys (playlists, favourites, watchProgress (merged, newest per item wins), myList, hiddenCategories,
+    categoryLabels) to `NSUbiquitousKeyValueStore` (entitlement only in `project-icloud.yml`, used by generate.sh when
+    Local.xcconfig has `LUMEN_ICLOUD = YES`: a Personal Team can't sign it); logins + OMDb key are synchronizable
+    Keychain items (iCloud Keychain). A playlist arriving from the other device loads via `loadAll()`.
+  - Smoothness (2026-11-02, Hayat found it laggy; not yet run): Xcode's Run uses **Release** (scheme in `project.yml`;
+    Debug is unoptimised Swift + Kotlin). Posters/backdrops via `CachedImage`/`ImagePipeline` (memory + disk cache,
+    ImageIO downsampling off the main thread), never `AsyncImage`. Kotlin lists/strings are read once into Swift
+    (`LoadedLibrary.channels/search`, `VodIndex.searchMovies/searchSeries`), built in the background; long `ForEach`es
+    use positions as ids. `store.nowNext` caches the guide per channel per minute. Playback's 15 s progress saves are
+    `quietly` (disk only; pages update on pause/leave), so hidden tabs don't redraw during playback.
+    Round 2 (not yet run): live AVPlayer starts without waiting (`automaticallyWaitsToMinimizeStalling` off until it
+    plays, 2 s forward buffer); launch refreshes channels(+guide) and VOD in parallel; film/series details cached in
+    Caches/Lumen/details (`LibraryCache.save/loadMovieInfo|SeriesInfo`; films 7 days, series 6 h + refresh in place);
+    VOD player: `ScrubBar`/`SkipLayer` own the position, model sets values only on change, live scrub while dragging
+    (Apple: one keyframe seek in flight; VLC: every 0.25 s), `seekHold` stops the bar snapping back, VLC
+    network-caching 1500; iPhone players go landscape (`ScreenOrientation` + app delegate mask); swipe down closes the
+    film player (not live: vertical swipes zap). Series page opens on the Next-up season, else the last picked
+    (`lastSeason` in UserDefaults), with its pill scrolled into view.
+    iPad live player channel list (Hayat 2026-11-02: iPad only, only if smooth; "Recently watched" row declined):
+    swipe in from the left edge (or the list button) → `ChannelListPanel` (the zapping list, now line, playing row
+    white), follows the finger by offset only (panel is `Equatable`, flat dark fill, no blur); tap = watch, tap video or
+    swipe left = close.
+    Film stalls (Hayat 2026-11-02: jumping just after opening froze until reopened): VLC jumps wait for
+    `isPlaying && isSeekable` (`pendingVLCJump`; Apple: before ready → `appleStartAt`); `checkStall` reopens the film at
+    the same point after 15 s without progress unless paused (max 3 in 2 min, then "can't be played"). PiP already covers
+    films on Apple's player; VLC films can't (VLCKit 3). `Haptics` (channel/tab change, favourite/My List), and the app
+    reopens on the last tab (`lastTab`, never Settings). Declined: keyboard shortcuts, Dynamic Type, Recently watched.
+    Apple's player first (Hayat 2026-11-02, "option C"; not yet run): for Xtream films/episodes that aren't
+    mp4/mov, `HLSRoute` asks the provider for the `.m3u8` copy of the same link (4 s, must start `#EXTM3U`),
+    remembered per server in UserDefaults `hlsRouteByServer` + `hlsRouteReason` (a "no" retried after 7 days; Settings → Film player shows the answer and has Check again). The probe reads 16 bytes then drops the request (5 s hard stop) so it never holds the provider's one connection. Apple's player
+    plays the copy (smoother seeking, PiP); no length, failure or no picture → VLC with the real file at the
+    same point, and the server is marked "no" unless its copies have played before. mpv was the next step
+    if this doesn't help (declined for now: big change, untestable from the cloud). Hayat's provider answers 460 to
+    the .m3u8 copy, so films stay on VLC there. Films often didn't start until reopened by hand (one-connection
+    provider): VLC gets `:http-reconnect`, an opening error or 7 s without picture reopens it by itself after a
+    1.5 s pause (`recover`, same 3-in-2-min limit as the stall watchdog).
+  - Loading look (Hayat 2026-11-02: style A layout over style C background, /mnt/project-files/ios-mockups/loading.html; Hayat: "perfect" 2026-11-02): no system
+    spinner anywhere. `Theme/Loading.swift`: `LoadingLine` (thin line, light sweeping through; Reduce Motion = pulse) and
+    `PlaybackLoading` (the poster as a blurred colour wash, drifting; big centred name, detail, "Resuming from 42:10" / "Starting"). Films/episodes show it until
+    the picture moves (`VodPlayerModel.started`; `VodPlayback.art/heading/detail`), live channels on the channel's
+    `NameTile` colour until playing (`LivePlayerModel.hasPicture`); later hiccups = the line along the bottom only.
+  - Demo library (2026-11-03, for App Review + store screenshots): Xtream login server `https://lumen-tv.github.io/demo`,
+    demo / demo. Static files built by `tools/build_demo.py` in the website repo (open/public-domain films, 2 series,
+    14 channels, 3-week guide refreshed weekly by a workflow). `XtreamServer.isStaticDemo` (only that address) reads
+    `player_api/<action>[-<id>].json` + `xmltv.xml` and plays `direct_source` links (`DemoLibraryTest`).
+  - Episode descriptions (2026-11-03, Hayat: provider leaves many blank; not yet run): `Data/EpisodeNotes.swift` fills
+    missing episode plots/stills from TVmaze (free, no key; CC BY-SA, so the series page says "Some episode descriptions
+    from TVmaze.com"), show found by OMDb's IMDb id, else name + year; cached a week in Caches/Lumen/tvmaze-*.json.
+    Missing subtitles = the provider's files have none; OpenSubtitles download was offered and declined for now.
+  - Film player look (2026-11-03, Hayat: "identical to Apple's", from screenshots of the Apple TV app's player, minus
+    Share and Extras; not yet run): `Player/PlayerChrome.swift`. Dimmed picture; top left close circle + PiP · AirPlay
+    (`AVRoutePickerView`) capsule; top right system volume (`SystemVolume`: KVO on outputVolume, set through a hidden
+    `MPVolumeView`'s slider); centre −10 / play / +10 circles; bottom title (detail above for episodes) with speed ·
+    audio · subtitles capsule (`SpeedMenu` → `VodPlayerModel.setRate`, VLC re-applied once playing), `PlayerTimeline`
+    (elapsed, knobless bar that thickens while dragged, −remaining; `TimeBubble` over the finger while dragging: time +
+    change; no thumbnails: they'd need a second provider connection), then Info (plot, `VodPlayback.plot`), Continue
+    Watching (other unfinished items, played in place by `switchTo`) and Next Episode pills. iOS 26 Liquid Glass via
+    `playerGlass`, dark blur before. System font in the player. Live player unchanged.
+  - Tapping the open tab again rebuilds it on its first page (`RootView.resets`, fade).
+  - iPad pill after going back (Hayat 2026-11-04: came back too late): `pushedPage()` = `PushedPage`, whose hidden
+    `PageTransitionWatcher` view controller hears UIKit's `viewWillDisappear` with `isMovingFromParent` (the start of a
+    swipe back or Back), so the pill fades in then; a cancelled swipe hides it again. Backup (build 11): it also adds a
+    target to the navigation controller's `interactivePopGestureRecognizer` and starts on `.began`. Not yet run.
+  - Zoom transitions (2026-11-03, not yet run): film/series pages zoom out of the tapped poster/card (iOS 18
+    `.navigationTransition(.zoom)`; `vodDestinations` owns the namespace, `zoomSource(ZoomID.movie/series(id))` on posters).
+    Polish (Hayat picked "zoom + all the polish"): `LumenMotion.press` spring on every button/card press (`PressStyle` in
+    the player), `CachedImage` fades in newly loaded pictures (memory hits show at once), film/series backdrops stretch
+    when pulled down and move at 1/3 speed when scrolled (`PageScroll`, read only by `PageBackdrop`). The player does
+    not zoom open: a zoomed fullScreenCover adds the system's own swipe-down dismiss, which would bring back the
+    Control Center problem.
+  - Polish round 2 (Hayat said "All" 2026-11-03; build 8, not yet run): live player restyled like the film player
+    (close · list/PiP/AirPlay capsule · volume; previous / pause / next channel circles; name + LIVE + now/next with a
+    progress bar), live pause (`LivePlayerModel.togglePause`). Lock screen / Control Center Now Playing for both players
+    (`Player/NowPlaying.swift`: MPNowPlayingInfoCenter + remote commands; films ±10 s and scrubbing, channels next/previous;
+    token so a late-closing player can't clear the next one). Film double-taps add up (+10 per tap within 1.2 s,
+    `JumpRipple`). Pinch to fill/fit (AVPlayerLayer gravity / VLC `aspectRatio = .fill`). Long-press a poster in rows,
+    See all and search (`Vod/PosterMenu.swift`): preview card (film details load while held) + Play/Resume + My List;
+    played through `vodDestinations`' `playVod` environment. Posters shimmer while loading (`Shimmer` in
+    CachedImage, `shimmer: true`; the name tile only if the picture fails; Reduce Motion = soft pulse). Home Screen icon
+    menu (`App/QuickActions.swift` + `LumenSceneDelegate` added by `LumenAppDelegate`): "Continue watching" (latest item
+    by name, rewritten on going to the background) and "Search"; `RootView` waits for VOD to load, then plays it.
+    `resumePlayback(item, store:, playlist:)` turns a Continue watching entry into a playback (player and icon menu).
+  - App icon: AB2 (Hayat 2026-10-31): soft out-of-focus blue/warm lights + glowing white L with a soft blue-white dot.
   - Not in Phase 1: Left sidebar and Right mini guide in the player (Phases 3/6), logos (Phase 4), settings/source editing (Phase 6).
 
 ## Decisions
@@ -178,6 +311,22 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   (Hayat didn't want their name in links). Public page: https://lumen-tv.github.io (repo `lumen-tv/lumen-tv.github.io`),
   `/get` forwards to the newest APK. `PRIVACY.md` = privacy policy. The brand logo tiles stay in the public build (Hayat's choice
   2026-10-28; they'd have to go for Google Play).
+- **Shared Kotlin** (`shared/`, Kotlin Multiplatform: android + iosArm64 + iosSimulatorArm64 + linuxX64 for tests only):
+  `M3uParser`, `StableKeys` (own `Sha1`), `UrlRedaction` (own `SimpleUri`, matched against `java.net.URI` by
+  `UrlRedactionMatchesUriTest`: stable keys hash its output, so it must never drift), `ChannelNames`, `CategoryNames`
+  (NFKC via expect/actual), `VodNames`, keeping their old packages; the Android app uses them as before. `core/` =
+  iPhone-only for now: `PlaylistLoader` (Ktor + kotlinx.serialization, `XtreamServer`, `XtreamApi`), exported to Swift as
+  `Shared.framework` (`LumenKt.makePlaylistLoader()`, suspend = Swift `async throws`, call from the main actor).
+  Tests: `./gradlew :shared:testAndroidHostTest :shared:linuxX64Test` (native run catches Kotlin/Native regex
+  differences: a negated class with `\p{…}` ignores its other members, so `symbols` uses a lookahead).
+  Xcode runs `ios/build-shared.sh` → `:shared:embedAndSignAppleFrameworkForXcode` (finds Homebrew Java/Android SDK).
+  `PlaylistLoader`'s loads/parsing run in `offMain` (`Dispatchers.Default`): a suspend function called from Swift
+  otherwise runs on the main thread, and reading the VOD lists or a guide froze the screens (2026-11-02).
+  Cloud sessions can compile the iOS klibs (`:shared:compileKotlinIosArm64`) but can't link the framework or build Swift.
+- **iOS** (`ios/`): SwiftUI, iOS 18+, iPhone + iPad, bundle id `com.hayat.lumen`. Built on Hayat's Mac with Xcode
+  (cloud sessions are Linux: they can't build or check Swift). Hayat has a paid developer account since 2026-10-31 (team id in the uncommitted
+  `ios/Config/Local.xcconfig`). App Store rules for the iOS build: no bundled content or provider links, no `BrandLogos` tiles, ratings as plain
+  text, no self-updater, http allowed via ATS (`NSAllowsArbitraryLoads`), passwords in the Keychain, `PrivacyInfo.xcprivacy`.
 - Shared debug keystore in `keystore/`: signs debug builds and local release builds, so cloud and laptop builds install
   over each other. It can't install over a published (privately signed) release, or the reverse.
 - Backups disabled (`allowBackup=false` + `data_extraction_rules.xml`): credentials stay on the device.
@@ -225,7 +374,7 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
 
 ## Working notes
 
-- Build: `./gradlew assembleDebug` · Tests: `./gradlew testDebugUnitTest` · Lint: `./gradlew lintDebug`.
+- Build: `./gradlew assembleDebug` · Tests: `./gradlew testDebugUnitTest :shared:testAndroidHostTest :shared:linuxX64Test` · Lint: `./gradlew lintDebug`.
 - **Judge smoothness only on release builds.** Debug Compose builds are visibly janky on the Chromecast; release
   (`./gradlew assembleRelease`, R8 + same shared key, installs over debug) was confirmed smooth on the TV.
   Startup profile: the libraries ship theirs, and `app/src/main/baseline-prof.txt` (0.7.0) adds wildcard rules for all of

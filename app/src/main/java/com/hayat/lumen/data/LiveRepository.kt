@@ -224,7 +224,7 @@ class LiveRepository(
                 throw ImportException("$host answered with error ${response.code}. Check the URL and your login.")
             }
             val parser = M3uParser()
-            val counts = importEntries(source.id, generation, parser.entries(response.body.charStream().buffered()), emptyList(), onProgress) {
+            val counts = importEntries(source.id, generation, parser.entries(response.body.charStream().buffered().lineSequence()), emptyList(), onProgress) {
                 parser.header.epgUrl?.let { sourceDao.setEpgUrlIfMissing(source.id, it) }
             }
             counts.copy(skippedMalformed = parser.skipped)

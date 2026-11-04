@@ -1,0 +1,13 @@
+# project.yml plus iCloud key-value storage (favourites, My List, progress and playlists sync
+# between iPhone and iPad, see Lumen/Data/CloudSync.swift). Only a paid developer team can sign
+# it, so ./generate.sh uses this file only when Config/Local.xcconfig has the line
+#   LUMEN_ICLOUD = YES
+# Without it the app builds with a free Personal Team and simply doesn't sync.
+include:
+  - project.yml
+targets:
+  Lumen:
+    entitlements:
+      path: Lumen/Lumen.entitlements
+      properties:
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(CFBundleIdentifier)
