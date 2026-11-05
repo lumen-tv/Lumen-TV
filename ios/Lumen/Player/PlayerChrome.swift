@@ -113,6 +113,8 @@ struct PlayerPill: View {
 final class SystemVolume {
     private(set) var level: Float = AVAudioSession.sharedInstance().outputVolume
     @ObservationIgnored fileprivate weak var slider: UISlider?
+    /// The hidden volume view, to find its slider again if it wasn't there yet.
+    @ObservationIgnored fileprivate weak var view: MPVolumeView?
     @ObservationIgnored private var observation: NSKeyValueObservation?
 
     init() {
@@ -129,7 +131,21 @@ final class SystemVolume {
     func set(_ value: Float) {
         let clamped = min(1, max(0, value))
         level = clamped
-        slider?.value = clamped
+        if slider == nil, let view { slider = Self.findSlider(in: view) }
+        guard let slider else { return }
+        // Setting `value` alone only moved the hidden slider: the volume didn't change. The
+        // slider changes the volume in its value-changed action, so that action is sent too.
+        slider.setValue(clamped, animated: false)
+        slider.sendActions(for: .valueChanged)
+    }
+
+    /// The slider sits a few views deep in newer iOS versions, not directly inside.
+    fileprivate static func findSlider(in view: UIView) -> UISlider? {
+        for sub in view.subviews {
+            if let slider = sub as? UISlider { return slider }
+            if let slider = findSlider(in: sub) { return slider }
+        }
+        return nil
     }
 }
 
@@ -142,15 +158,17 @@ struct HiddenVolumeView: UIViewRepresentable {
         let view = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
         view.alpha = 0.01
         view.isUserInteractionEnabled = false
+        volume.view = view
         // Its slider is made a moment later.
         DispatchQueue.main.async {
-            volume.slider = view.subviews.compactMap { $0 as? UISlider }.first
+            volume.slider = SystemVolume.findSlider(in: view)
         }
         return view
     }
 
     func updateUIView(_ uiView: MPVolumeView, context: Context) {
-        if volume.slider == nil { volume.slider = uiView.subviews.compactMap { $0 as? UISlider }.first }
+        volume.view = uiView
+        if volume.slider == nil { volume.slider = SystemVolume.findSlider(in: uiView) }
     }
 }
 
