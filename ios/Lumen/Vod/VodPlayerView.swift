@@ -540,6 +540,17 @@ final class VodPlayerModel {
     @ObservationIgnored private var lastTime: Double = -1
     @ObservationIgnored private var lastAdvance = Date()
     @ObservationIgnored private var recoveries: [Date] = []
+    /// Reconnect guards (VLC): the provider sometimes drops the connection mid-film, and after a
+    /// reconnect VLC can lose track: its clock restarts near 0:00 or freezes, or its length shrinks
+    /// to about where you are (the bar then sits at the end and Next episode appears). These keep
+    /// the film's length once it has played and when `position` was last confirmed; a time that
+    /// disagrees for a few seconds reopens the film cleanly at `position` (`checkVLC`).
+    @ObservationIgnored private var knownLength: Double = 0
+    @ObservationIgnored private var lengthLocked = false
+    @ObservationIgnored private var goodAt = Date()
+    @ObservationIgnored private var badSince: Date?
+    /// Where the last reopen started, so an end that comes again from the same point is believed.
+    @ObservationIgnored private var lastRecoverAt: Double?
     /// Whether the picture has moved since this film was opened (or reopened).
     @ObservationIgnored private var hasPlayed = false
     /// The picture has appeared (it moved while playing): the loading screen goes.
@@ -588,6 +599,9 @@ final class VodPlayerModel {
         pendingVLCJump = nil
         seekHold = nil
         recoveries = []
+        knownLength = 0
+        lengthLocked = false
+        lastRecoverAt = nil
         let token = UUID()
         startToken = token
         if Self.prefersApple(parsed) {
@@ -627,7 +641,7 @@ final class VodPlayerModel {
 
     private func resetState(at seconds: Double) {
         position = seconds
-        duration = 0
+        duration = knownLength // 0 for a new film; the same film reopened keeps its length
         failed = false
         ended = false
         isBuffering = true
@@ -638,6 +652,8 @@ final class VodPlayerModel {
         userPaused = false
         lastTime = -1
         lastAdvance = .now
+        goodAt = .now
+        badSince = nil
         hasPlayed = false
         set(\.started, false)
         timer?.invalidate()
@@ -678,8 +694,10 @@ final class VodPlayerModel {
             // A network buffer (ms) to ride out slow provider servers. It's also how long a film
             // takes to start (and to resume after a jump): 3 s felt slow, 1.5 s rides out hiccups.
             ":network-caching=1500",
-            // If the provider drops the connection, VLC reconnects by itself instead of stopping.
-            ":http-reconnect",
+            // No ":http-reconnect": VLC's own reconnect asks for "the rest from byte X", which
+            // Xtream servers often answer badly, and VLC then lost its place (time back to 0:00 or
+            // at the end, Next episode showing mid-film). A dropped connection now ends or fails
+            // the film in VLC, and `poll` reopens it here at the last good time instead.
         ]
         if seconds > 1 { options.append(":start-time=\(Int(seconds))") }
         guard player.open(parsed, options: options) else { failed = true; return }
@@ -697,6 +715,7 @@ final class VodPlayerModel {
             seekHold = nil
         }
         if abs(time - position) >= 0.25 { position = time }
+        goodAt = .now
     }
 
     private func set<T: Equatable>(_ path: ReferenceWritableKeyPath<VodPlayerModel, T>, _ value: T) {
@@ -710,9 +729,10 @@ final class VodPlayerModel {
             pendingVLCJump = nil
             player.jump(to: target)
         }
+        if !checkVLC(time) { return }
         checkStall(time)
         update(position: time)
-        if player.length > 0 { set(\.duration, player.length) }
+        if knownLength > 0 { set(\.duration, knownLength) }
         set(\.isPlaying, player.isPlaying)
         if player.isPlaying, vlcRate != rate {
             player.setRate(rate)
@@ -726,10 +746,20 @@ final class VodPlayerModel {
         }
         switch player.state {
         case .error:
-            // Opening failed: usually the provider still counting the last connection. Try again
-            // by itself (what reopening by hand did), and only then say it can't be played.
-            if !hasPlayed, !failed { recover(at: max(position, pendingVLCJump ?? 0)) } else { set(\.failed, true) }
-        case .ended: set(\.ended, true)
+            // Opening failed (usually the provider still counting the last connection), or the
+            // connection dropped mid-film. Reopen at the same point by itself (what reopening by
+            // hand did); `recover` says it can't be played after 3 tries in 2 minutes.
+            if !failed { recover(at: max(position, pendingVLCJump ?? 0)) }
+        case .ended:
+            // A dropped connection looks like the end of the file to VLC. Only believe it near the
+            // real end; otherwise reopen where you were (unless it ended there again right after a
+            // reopen: then the file really is shorter than VLC thought).
+            if knownLength > 0, position < knownLength - SkipPick.creditsLatest,
+               abs(position - (lastRecoverAt ?? -100)) > 5 {
+                recover(at: position)
+            } else {
+                set(\.ended, true)
+            }
         case .opening: set(\.isBuffering, !player.isPlaying)
         default: set(\.isBuffering, false)
         }
@@ -850,6 +880,30 @@ final class VodPlayerModel {
         player.jump(to: seconds, fast: true)
     }
 
+    /// Reconnect guard for VLC (see `knownLength`). The length is kept once the film has played:
+    /// a later, different length from VLC is ignored (the bar and Next episode use the kept one).
+    /// Returns false when this time is not to be believed: it jumped although you didn't skip or
+    /// drag (back towards 0:00, or ahead faster than playing could go). Such readings aren't shown;
+    /// if they last 3 s (8 s while the film is still opening), it's reopened at the last good time.
+    private func checkVLC(_ time: Double) -> Bool {
+        let length = player.length
+        if length > 0, !lengthLocked { knownLength = length }
+        if hasPlayed, knownLength > 0 { lengthLocked = true }
+
+        let userJumping = seekHold != nil || pendingVLCJump != nil || Date.now.timeIntervalSince(lastScrubJump) < 2
+        let hasTime = time > 0 || (player.isPlaying && position > 10)
+        let ahead = time - position
+        let allowed = Date.now.timeIntervalSince(goodAt) * Double(max(rate, 1)) + 10
+        guard hasTime, !userJumping, ahead < -10 || ahead > allowed else {
+            badSince = nil
+            return true
+        }
+        let since = badSince ?? .now
+        badSince = since
+        if Date.now.timeIntervalSince(since) > (hasPlayed ? 3 : 8) { recover(at: position) }
+        return false
+    }
+
     /// Some provider servers stop answering after a jump (they allow one connection, and the
     /// jump opens a new one before the old one closes), which left the film frozen until it was
     /// reopened. When the picture hasn't moved for 15 s without you pausing (7 s while it's still
@@ -870,7 +924,9 @@ final class VodPlayerModel {
             return
         }
         guard Date.now.timeIntervalSince(lastAdvance) > (hasPlayed ? 15 : 7) else { return }
-        recover(at: seekHold?.target ?? pendingVLCJump ?? max(position, time))
+        // VLC's own time may be the wrong one after a dropped connection, so VLC reopens at the last
+        // good time (`position`); Apple's player keeps the further of the two, as before.
+        recover(at: seekHold?.target ?? pendingVLCJump ?? (engine == .vlc ? position : max(position, time)))
     }
 
     /// Closes the film and opens it again at `at`, after a short pause so the provider has let go
@@ -880,6 +936,7 @@ final class VodPlayerModel {
         recoveries = recoveries.filter { Date.now.timeIntervalSince($0) < 120 }
         guard recoveries.count < 3 else { set(\.failed, true); return }
         recoveries.append(.now)
+        lastRecoverAt = at
         pendingVLCJump = nil
         seekHold = nil
         timer?.invalidate()
@@ -897,6 +954,7 @@ final class VodPlayerModel {
 
     private func hold(_ seconds: Double) {
         position = seconds
+        goodAt = .now
         seekHold = (seconds, Date.now.addingTimeInterval(4))
     }
 
