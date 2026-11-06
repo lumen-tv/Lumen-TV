@@ -336,6 +336,7 @@ struct SpeedMenu: View {
         } label: {
             PlayerIcon(systemImage: "gauge.with.dots.needle.67percent")
         }
+        .plainMenu()
         .accessibilityLabel("Playback speed")
     }
 }
@@ -361,6 +362,7 @@ struct AudioMenu: View {
         } label: {
             PlayerIcon(systemImage: "waveform")
         }
+        .plainMenu()
         .accessibilityLabel("Audio")
     }
 }
@@ -386,6 +388,7 @@ struct SubtitleMenu: View {
         } label: {
             PlayerIcon(systemImage: "captions.bubble")
         }
+        .plainMenu()
         .accessibilityLabel("Subtitles")
     }
 }

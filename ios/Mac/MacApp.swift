@@ -12,6 +12,13 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
             guard let window = note.object as? NSWindow, window.frameAutosaveName == "main" else { return }
             MainActor.assumeIsolated { NSApp.terminate(nil) }
         }
+        // Full screen rebuilds the window's title bar, and the window isn't there until it's shown.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.willEnterFullScreenNotification,
+                     NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { MacWindow.updateChrome() }
+            }
+        }
     }
 }
 
@@ -120,6 +127,22 @@ enum MacWindow {
         NSApp.windows.first { $0.frameAutosaveName == "main" } ?? NSApp.windows.first { !($0 is NSPanel) && $0.canBecomeMain }
     }
 
+    /// Keeps the title bar see-through, with no line under it: the pages run up underneath.
+    @MainActor static func clearTitleBar() {
+        guard let main else { return }
+        main.titlebarAppearsTransparent = true
+        main.titlebarSeparatorStyle = .none
+    }
+
+    /// While a player fills the window its page's toolbar goes (back button, menus, and the band
+    /// full screen draws behind them). AppKit's switch rather than SwiftUI's: that one also takes
+    /// the close, minimise and full-screen buttons away.
+    @MainActor static func updateChrome() {
+        let stage = PlayerStage.shared
+        clearTitleBar()
+        main?.toolbar?.isVisible = stage.showing == nil || stage.isMini
+    }
+
     /// The green button's full screen, for the player's F key and full-screen button. From the mini
     /// player it first goes back to the window.
     @MainActor static func toggleFullScreen() {
@@ -135,8 +158,10 @@ enum MacWindow {
 /// hands its player over.
 ///
 /// Each player has its own AppKit host view, which is what moves between the window and the mini
-/// player: SwiftUI keeps the player inside it running, so the stream isn't reopened. It has to be
-/// handed over with a direct `addSubview`: `removeFromSuperview` ends the player (`tearDown`).
+/// player: SwiftUI keeps the player inside it running, so the stream isn't reopened. Two things
+/// would fire the player's `onDisappear`, which stops it, so neither may happen during a move:
+/// `removeFromSuperview` (only `tearDown` does that), and SwiftUI removing the view that holds it,
+/// so `holder` always stays in the window, empty when there's no player.
 @MainActor
 @Observable
 final class PlayerStage {
@@ -151,6 +176,8 @@ final class PlayerStage {
     private(set) var showing: Showing?
     private(set) var isMini = false
     @ObservationIgnored private var panel: MiniPanel?
+    /// The player's place in the main window (`PlayerStageLayer`).
+    @ObservationIgnored let holder = PlayerHolder()
     /// "Full screen when playing": the window went full screen for the player, so it comes back
     /// when the player goes. (Full screen you chose yourself stays.)
     @ObservationIgnored private var enteredFullScreen = false
@@ -169,7 +196,10 @@ final class PlayerStage {
         host.sizingOptions = []
         host.safeAreaRegions = []
         host.autoresizingMask = [.width, .height]
-        withAnimation(.easeOut(duration: 0.2)) { showing = Showing(id: id, host: host, close: close) }
+        host.frame = holder.bounds
+        holder.addSubview(host)
+        showing = Showing(id: id, host: host, close: close)
+        MacWindow.updateChrome()
         enterFullScreenIfWanted()
         return id
     }
@@ -197,18 +227,22 @@ final class PlayerStage {
         guard let showing, !isMini else { return }
         let panel = panel ?? MiniPanel.make()
         self.panel = panel
-        panel.content?.hold(showing.host)
         panel.orderFrontRegardless()
+        panel.content?.hold(showing.host)
         isMini = true
+        MacWindow.updateChrome()
         leaveFullScreenIfEntered()
         // Its page's cover counts as closed, so the same film can be opened again from there.
         showing.close()
     }
 
-    /// Back in the main window, at the same point (`PlayerStageLayer` takes the host view).
+    /// Back in the main window, at the same point.
     func expand() {
-        guard isMini else { return }
+        guard isMini, let showing else { return }
+        showing.host.frame = holder.bounds
+        holder.addSubview(showing.host)
         isMini = false
+        MacWindow.updateChrome()
         if let main = MacWindow.main {
             if main.isMiniaturized { main.deminiaturize(nil) }
             main.makeKeyAndOrderFront(nil)
@@ -237,6 +271,7 @@ final class PlayerStage {
         showing = nil
         isMini = false
         panel?.orderOut(nil)
+        MacWindow.updateChrome()
     }
 }
 
@@ -278,36 +313,28 @@ extension View {
 
 private struct PlayerStageLayer: ViewModifier {
     func body(content: Content) -> some View {
+        let stage = PlayerStage.shared
         content.overlay {
-            if let showing = PlayerStage.shared.showing, !PlayerStage.shared.isMini {
-                PlayerSlot(host: showing.host)
-                    .id(showing.id)
-                    .transition(.opacity)
-                    // The title bar's buttons stay clickable over the picture.
-                    .ignoresSafeArea()
-            }
+            PlayerSlot(holder: stage.holder)
+                // The title bar's buttons stay clickable over the picture.
+                .ignoresSafeArea()
+                // Empty, it mustn't take the clicks meant for the page underneath.
+                .allowsHitTesting(stage.showing != nil && !stage.isMini)
         }
     }
 }
 
-/// Where the player's host view sits in the main window.
+/// Holds the player in the main window. It's always there, and lets clicks through when empty.
+final class PlayerHolder: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        subviews.isEmpty ? nil : super.hitTest(point)
+    }
+}
+
 private struct PlayerSlot: NSViewRepresentable {
-    let host: NSView
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        hold(in: view)
-        return view
-    }
-
-    func updateNSView(_ view: NSView, context: Context) {
-        if host.superview !== view { hold(in: view) }
-    }
-
-    private func hold(in view: NSView) {
-        host.frame = view.bounds
-        view.addSubview(host)
-    }
+    let holder: NSView
+    func makeNSView(context: Context) -> NSView { holder }
+    func updateNSView(_ view: NSView, context: Context) {}
 }
 
 /// The player keys (see `View.macPlayerKeys`), read from the window's key presses while the

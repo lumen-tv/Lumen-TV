@@ -45,7 +45,7 @@ extension View {
         // Mac: the window's toolbar always stays, because it holds the close / minimise / full
         // screen buttons (hiding it took them away, Hayat 2026-11-06). Pages without a bar just
         // keep it see-through; pushed pages show their back button in it.
-        toolbarBackground(.hidden, for: .windowToolbar)
+        toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
     }
 
@@ -55,7 +55,7 @@ extension View {
         #if os(iOS)
         toolbarBackground(.hidden, for: .navigationBar)
         #else
-        toolbarBackground(.hidden, for: .windowToolbar)
+        toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         #endif
     }
 
@@ -64,6 +64,20 @@ extension View {
     func hideStatusBar(_ hidden: Bool) -> some View {
         #if os(iOS)
         statusBarHidden(hidden)
+        #else
+        self
+        #endif
+    }
+
+    /// A menu that looks only like its own label. On the Mac a `Menu` otherwise draws a box and a
+    /// chevron around it. iPhone/iPad already show just the label.
+    @ViewBuilder
+    func plainMenu() -> some View {
+        #if os(macOS)
+        menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
         #else
         self
         #endif

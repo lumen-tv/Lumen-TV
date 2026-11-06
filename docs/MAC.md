@@ -40,9 +40,9 @@ With a mouse or trackpad: a click shows or hides the controls, a double click is
 fills or fits the picture. Two fingers up and down change the Mac's volume; two fingers sideways
 seek in films and episodes (one jump when the fingers lift, so a swipe opens one provider connection).
 
-The mini player keeps the same playback: don't call `removeFromSuperview` on the player's host view to
-move it. That fires `onDisappear`, which stops the film; a direct `addSubview` doesn't (checked with a
-small test app, 2026-11-06). Settings has "Full screen when playing", off by default.
+The mini player keeps the same playback: the player's host view moves with a direct `addSubview`. Calling
+`removeFromSuperview` on it, or letting SwiftUI remove the view that holds it, fires `onDisappear`, which
+stops the film, so `PlayerStage.holder` always stays in the window (checked with small test apps, 2026-11-06). Settings has "Full screen when playing", off by default.
 
 ## 1. One-time setup on your Mac
 

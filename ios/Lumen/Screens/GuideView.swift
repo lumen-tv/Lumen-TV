@@ -165,6 +165,7 @@ struct GuideView: View {
             .glass(cornerRadius: 999)
             .frame(maxWidth: 200, alignment: .trailing)
         }
+        .plainMenu()
     }
 
     /// Loading / failed / no guide, as one line above the grid.

@@ -112,6 +112,7 @@ struct LiveChannelsView: View {
                     .padding(.vertical, 8)
                     .glass(cornerRadius: 999)
             }
+            .plainMenu()
         }
     }
 }

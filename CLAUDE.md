@@ -334,8 +334,10 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   TV app reads latest); the app checks that release (`MacUpdates`). Website: lumen-tv.github.io/mac.
   Mac-only features (Hayat 2026-11-06; built, not yet run on screen): hover + row arrows (`MacHover`), mini player
   (`MacMiniPlayer`; `PlayerStage` gives each player an `NSHostingView` that moves with a direct `addSubview`, never
-  `removeFromSuperview`, so the stream isn't reopened), Playback menu via the `MacPlayback` registry, two-finger seek and
+  `removeFromSuperview`, into a `holder` that never leaves the window, so the stream isn't reopened), Playback menu via the `MacPlayback` registry, two-finger seek and
   volume plus AppKit click counts (`MacPlayerInput`), Settings "Full screen when playing" (`macAutoFullScreen`).
+  While a player fills the window its toolbar is hidden with AppKit's `toolbar.isVisible` (`MacWindow.updateChrome`); SwiftUI's
+  `.toolbar(.hidden, for: .windowToolbar)` also removes the traffic lights. Mac `Menu`s with custom labels need `.plainMenu()`.
 - Shared debug keystore in `keystore/`: signs debug builds and local release builds, so cloud and laptop builds install
   over each other. It can't install over a published (privately signed) release, or the reverse.
 - Backups disabled (`allowBackup=false` + `data_extraction_rules.xml`): credentials stay on the device.
