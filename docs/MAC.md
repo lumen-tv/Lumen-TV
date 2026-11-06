@@ -9,6 +9,10 @@ The Mac app is the iPhone/iPad app's SwiftUI screens built for macOS (target **L
   Updates), the players filling the window (`PlayerStage`), and the player keys.
 - `MacVideo.swift`: the video layer, AirPlay button and the Mac's volume for the players.
 - `MacUpdates.swift`: checks the GitHub release tagged `mac` and offers the new DMG.
+- `MacHover.swift`: posters and cards lift under the pointer, buttons brighten, sideways rows get < > arrows.
+- `MacMiniPlayer.swift`: the mini player, a floating panel the running player moves into.
+- `MacPlayback.swift`: what the showing player can do, for the mini player and the Playback menu.
+- `MacPlayerInput.swift`: clicks, pinch and two-finger scrolling over the picture.
 
 The rest is shared, so a feature added to the iPhone app is on the Mac too. Where the two differ,
 the screens call one helper (`ios/Lumen/Theme/Platform.swift`: `urlKeyboard()`, `navBar(_:)`,
@@ -29,6 +33,16 @@ It's signed with your **Developer ID** and **notarized** by Apple, so it opens w
 | Esc | Close | Close |
 
 Moving the mouse brings the controls back. The Mac keyboard's media keys (▶︎❚❚) work too.
+
+The Playback menu has all of these, plus Next Episode (⇧⌘N), Audio, Subtitles and Mini Player (⌥⌘M).
+
+With a mouse or trackpad: a click shows or hides the controls, a double click is full screen, a pinch
+fills or fits the picture. Two fingers up and down change the Mac's volume; two fingers sideways
+seek in films and episodes (one jump when the fingers lift, so a swipe opens one provider connection).
+
+The mini player keeps the same playback: don't call `removeFromSuperview` on the player's host view to
+move it. That fires `onDisappear`, which stops the film; a direct `addSubview` doesn't (checked with a
+small test app, 2026-11-06). Settings has "Full screen when playing", off by default.
 
 ## 1. One-time setup on your Mac
 
