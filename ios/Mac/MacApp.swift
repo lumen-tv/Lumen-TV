@@ -37,6 +37,52 @@ struct LumenCommands: Commands {
             }
             Divider()
         }
+        CommandMenu("Playback") { PlaybackMenu() }
+    }
+}
+
+/// The Playback menu: enabled while a player shows, through what it put in `MacPlayback`. Space,
+/// the arrows and F are named in the titles rather than set as menu shortcuts: the player's key
+/// monitor already handles them, and as menu shortcuts they'd also catch typing in the search
+/// field while the mini player runs.
+private struct PlaybackMenu: View {
+    private var actions: MacPlaybackActions? { MacPlayback.shared.actions }
+    private var showing: Bool { PlayerStage.shared.showing != nil }
+
+    var body: some View {
+        // Read so the menu is rebuilt when the film starts, which is when its tracks are known.
+        let _ = actions?.isPlaying()
+        Button("Play/Pause (Space)") { actions?.togglePause() }
+            .disabled(actions == nil)
+        item("Back 10 Seconds (←)", actions?.back)
+        item("Forward 10 Seconds (→)", actions?.forward)
+        Divider()
+        item("Previous Channel (↑)", actions?.previousChannel)
+        item("Next Channel (↓)", actions?.nextChannel)
+        item("Next Episode", actions?.nextEpisode)
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+        Divider()
+        tracks("Audio", actions?.audioTracks?() ?? [], select: actions?.selectAudio)
+        tracks("Subtitles", actions?.subtitleTracks?() ?? [], select: actions?.selectSubtitle)
+        Divider()
+        Button("Mini Player") { PlayerStage.shared.toggleMini() }
+            .keyboardShortcut("m", modifiers: [.command, .option])
+            .disabled(!showing)
+        Button("Full Screen (F)") { MacWindow.toggleFullScreen() }
+            .disabled(!showing)
+    }
+
+    private func item(_ title: String, _ action: (() -> Void)?) -> some View {
+        Button(title) { action?() }.disabled(action == nil)
+    }
+
+    private func tracks(_ title: String, _ list: [Track], select: ((Int32) -> Void)?) -> some View {
+        Menu(title) {
+            ForEach(list, id: \.id) { track in
+                Toggle(track.name, isOn: Binding(get: { track.selected }, set: { _ in select?(track.id) }))
+            }
+        }
+        .disabled(list.isEmpty)
     }
 }
 
