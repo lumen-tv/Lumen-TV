@@ -51,6 +51,9 @@ struct SettingsView: View {
                 } footer: {
                     Text("IMDb and Rotten Tomatoes scores on film and series pages, with your own free OMDb key.")
                 }
+                #if os(macOS)
+                MacPlayerSettingsSection()
+                #endif
                 ChannelLogosSection()
                 Section("Check this device") {
                     NavigationLink("Test video playback") { TestPlayerView().pushedPage() }

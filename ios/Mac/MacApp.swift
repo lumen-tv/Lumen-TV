@@ -96,6 +96,24 @@ final class MacMenu {
     func open(_ tab: AppTab) { requestedTab = tab }
 }
 
+/// Settings only the Mac has.
+enum MacSettings {
+    static let autoFullScreen = "macAutoFullScreen"
+}
+
+/// In Settings: the window goes full screen while a player shows. Off by default.
+struct MacPlayerSettingsSection: View {
+    @AppStorage(MacSettings.autoFullScreen) private var autoFullScreen = false
+
+    var body: some View {
+        Section {
+            Toggle("Full screen when playing", isOn: $autoFullScreen)
+        } footer: {
+            Text("The window goes full screen when a channel or film opens, and comes back when it closes.")
+        }
+    }
+}
+
 enum MacWindow {
     /// Lumen's one window (SwiftUI saves its place under the `Window` scene's id).
     @MainActor static var main: NSWindow? {
@@ -133,6 +151,9 @@ final class PlayerStage {
     private(set) var showing: Showing?
     private(set) var isMini = false
     @ObservationIgnored private var panel: MiniPanel?
+    /// "Full screen when playing": the window went full screen for the player, so it comes back
+    /// when the player goes. (Full screen you chose yourself stays.)
+    @ObservationIgnored private var enteredFullScreen = false
 
     /// The mini player's window while it's showing, for the player keys.
     var miniWindow: NSWindow? { isMini ? panel : nil }
@@ -149,6 +170,7 @@ final class PlayerStage {
         host.safeAreaRegions = []
         host.autoresizingMask = [.width, .height]
         withAnimation(.easeOut(duration: 0.2)) { showing = Showing(id: id, host: host, close: close) }
+        enterFullScreenIfWanted()
         return id
     }
 
@@ -156,12 +178,14 @@ final class PlayerStage {
     func hide(_ id: UUID) {
         guard showing?.id == id, !isMini else { return }
         tearDown()
+        leaveFullScreenIfEntered()
     }
 
     /// ✕ or Esc, the end of a film, or the mini player's close.
     func closeCurrent() {
         let close = showing?.close
         tearDown()
+        leaveFullScreenIfEntered()
         close?()
     }
 
@@ -176,6 +200,7 @@ final class PlayerStage {
         panel.content?.hold(showing.host)
         panel.orderFrontRegardless()
         isMini = true
+        leaveFullScreenIfEntered()
         // Its page's cover counts as closed, so the same film can be opened again from there.
         showing.close()
     }
@@ -190,6 +215,21 @@ final class PlayerStage {
         }
         NSApp.activate()
         panel?.orderOut(nil)
+        enterFullScreenIfWanted()
+    }
+
+    private func enterFullScreenIfWanted() {
+        guard UserDefaults.standard.bool(forKey: MacSettings.autoFullScreen), !isMini,
+              let main = MacWindow.main, !main.styleMask.contains(.fullScreen) else { return }
+        enteredFullScreen = true
+        main.toggleFullScreen(nil)
+    }
+
+    private func leaveFullScreenIfEntered() {
+        guard enteredFullScreen else { return }
+        enteredFullScreen = false
+        // You may have left full screen yourself in the meantime.
+        if let main = MacWindow.main, main.styleMask.contains(.fullScreen) { main.toggleFullScreen(nil) }
     }
 
     private func tearDown() {
