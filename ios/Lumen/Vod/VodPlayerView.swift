@@ -217,6 +217,12 @@ struct VodPlayerView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     PlayerCircleButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    #if os(macOS)
+                    // Mac: full screen and back (also F, or the window's green button).
+                    PlayerCircleButton(systemImage: "arrow.up.left.and.arrow.down.right", label: "Full screen") {
+                        MacWindow.toggleFullScreen()
+                    }
+                    #endif
                     PlayerCapsule {
                         pipButton
                         AirPlayButton().frame(width: 52, height: 44).accessibilityLabel("AirPlay")
@@ -286,6 +292,8 @@ struct VodPlayerView: View {
             }
             .padding(.horizontal, wide ? 32 : 20)
             .padding(.vertical, wide ? 20 : 14)
+            // Mac: below the window's close / minimise / full screen buttons.
+            .padding(.top, LumenPlatform.isMac ? 28 : 0)
             .animation(.easeOut(duration: 0.22), value: panel)
         }
         .background(HiddenVolumeView(volume: volume).frame(width: 1, height: 1))

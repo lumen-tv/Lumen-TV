@@ -42,7 +42,10 @@ extension View {
         #if os(iOS)
         toolbar(visibility, for: .navigationBar)
         #else
-        toolbar(visibility, for: .windowToolbar)
+        // Mac: the window's toolbar always stays, because it holds the close / minimise / full
+        // screen buttons (hiding it took them away, Hayat 2026-11-06). Pages without a bar just
+        // keep it see-through; pushed pages show their back button in it.
+        toolbarBackground(.hidden, for: .windowToolbar)
         #endif
     }
 

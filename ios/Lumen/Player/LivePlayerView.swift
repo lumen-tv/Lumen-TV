@@ -139,6 +139,12 @@ struct LivePlayerView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 12) {
                     PlayerCircleButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    #if os(macOS)
+                    // Mac: full screen and back (also F, or the window's green button).
+                    PlayerCircleButton(systemImage: "arrow.up.left.and.arrow.down.right", label: "Full screen") {
+                        MacWindow.toggleFullScreen()
+                    }
+                    #endif
                     PlayerCapsule {
                         if listAllowed {
                             Button { openList() } label: { PlayerIcon(systemImage: "list.bullet") }
@@ -232,6 +238,8 @@ struct LivePlayerView: View {
             }
             .padding(.horizontal, listAllowed ? 32 : 20)
             .padding(.vertical, listAllowed ? 20 : 14)
+            // Mac: below the window's close / minimise / full screen buttons.
+            .padding(.top, LumenPlatform.isMac ? 28 : 0)
         }
         .background(HiddenVolumeView(volume: volume).frame(width: 1, height: 1))
         .accessibilityAction(named: "Next channel") { zap(by: 1) }
