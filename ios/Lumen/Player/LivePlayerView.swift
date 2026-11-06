@@ -14,9 +14,13 @@ struct LivePlayerView: View {
     @State private var vlcPiP: VLCPiP?
     @State private var chromeVisible = true
     @State private var hideTask: Task<Void, Never>?
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    /// Mac: the player sits in the window (`PlayerStage`), not in a cover iOS can dismiss.
+    @Environment(\.closePlayer) private var closePlayer
     @Environment(PlaylistStore.self) private var store
+    #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
     /// iPad: the channel list down the left (swipe in from the left edge, or the list button).
     @State private var listOpen = false
     /// How far the list has been dragged (in from the edge, or back out) while a finger is down.
@@ -25,7 +29,12 @@ struct LivePlayerView: View {
     @State private var nowPlaying: UUID?
 
     /// iPad only (Hayat 2026-11-02): an iPhone screen is too small to give a third of it to a list.
+    #if os(iOS)
     private var listAllowed: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular && channels.count > 1 }
+    #else
+    /// Mac: the window is always big enough.
+    private var listAllowed: Bool { channels.count > 1 }
+    #endif
     private static let listWidth: CGFloat = 380
 
     init(channels: [LiveChannel], startIndex: Int) {
@@ -47,6 +56,15 @@ struct LivePlayerView: View {
             VLCVideo(engine: model.vlc, pip: $vlcPiP)
                 .ignoresSafeArea()
                 .opacity(model.usesVLC ? 1 : 0)
+
+            #if os(macOS)
+            // Mac: a click shows or hides the buttons at once; a double click is full screen.
+            MacClickSurface(
+                click: { if listOpen { closeList() } else { toggleChrome() } },
+                doubleClick: { MacWindow.toggleFullScreen() }
+            )
+            .ignoresSafeArea()
+            #endif
 
             // Until the channel's picture appears: its colour, name and what's on (as the films'
             // loading screen). A hiccup later shows only the thin line along the bottom.
@@ -74,13 +92,15 @@ struct LivePlayerView: View {
                     .glass(fill: Color.black.opacity(0.6))
                     .padding(32)
             }
-            if chromeVisible { chrome.transition(.opacity) }
+            if chromeVisible, !LumenPlatform.playerIsMini { chrome.transition(.opacity) }
             if listAllowed { channelList }
         }
+        #if os(iOS)
         .contentShape(Rectangle())
         .onTapGesture {
             if listOpen { closeList() } else { toggleChrome() }
         }
+        #endif
         .gesture(
             DragGesture(minimumDistance: 40).onEnded { drag in
                 guard !listOpen, listDrag == 0, abs(drag.translation.height) > abs(drag.translation.width) else { return }
@@ -89,7 +109,34 @@ struct LivePlayerView: View {
             }
         )
         .simultaneousGesture(listGesture)
-        .statusBarHidden(!chromeVisible)
+        // Mac: the keyboard (↑ ↓ channels, Space pause, Esc close, F full screen) and the mouse.
+        .macPlayerKeys { key in
+            switch key {
+            case .up: zap(by: -1)
+            case .down: zap(by: 1)
+            case .space: model.togglePause(); showChromeBriefly()
+            case .escape: if listOpen { closeList() } else { dismiss() }
+            case .left, .right: return false
+            }
+            return true
+        }
+        .macMouseMoved { showChromeBriefly() }
+        #if os(macOS)
+        // Two fingers up and down is the volume. Sideways does nothing: live TV can't seek.
+        .macPlayerScroll(
+            blocked: { listOpen },
+            volume: { volume.set(volume.level + $0); showChromeBriefly() }
+        )
+        .macPlayback(refresh: channels.count) {
+            MacPlaybackActions(
+                isPlaying: { !model.paused },
+                togglePause: { model.togglePause(); showChromeBriefly() },
+                previousChannel: channels.count > 1 ? { zap(by: -1) } : nil,
+                nextChannel: channels.count > 1 ? { zap(by: 1) } : nil
+            )
+        }
+        #endif
+        .hideStatusBar(!chromeVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
             model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
@@ -118,13 +165,22 @@ struct LivePlayerView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 12) {
                     PlayerCircleButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    #if os(macOS)
+                    // Mac: full screen and back (also F, or the window's green button).
+                    PlayerCircleButton(systemImage: "arrow.up.left.and.arrow.down.right", label: "Full screen") {
+                        MacWindow.toggleFullScreen()
+                    }
+                    PlayerCircleButton(systemImage: "pip", label: "Mini player") {
+                        PlayerStage.shared.toggleMini()
+                    }
+                    #endif
                     PlayerCapsule {
                         if listAllowed {
                             Button { openList() } label: { PlayerIcon(systemImage: "list.bullet") }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Channel list")
                         }
-                        if model.usesVLC, let vlcPiP {
+                        if model.usesVLC, let vlcPiP, !LumenPlatform.isMac || vlcPiP.isPossible {
                             Button { vlcPiP.toggle() } label: { PlayerIcon(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter") }
                                 .buttonStyle(.plain)
                                 .opacity(vlcPiP.isPossible ? 1 : 0.4)
@@ -211,6 +267,8 @@ struct LivePlayerView: View {
             }
             .padding(.horizontal, listAllowed ? 32 : 20)
             .padding(.vertical, listAllowed ? 20 : 14)
+            // Mac: below the window's close / minimise / full screen buttons.
+            .padding(.top, LumenPlatform.isMac ? 28 : 0)
         }
         .background(HiddenVolumeView(volume: volume).frame(width: 1, height: 1))
         .accessibilityAction(named: "Next channel") { zap(by: 1) }
@@ -310,12 +368,21 @@ struct LivePlayerView: View {
         model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
     }
 
+    private func dismiss() {
+        if let closePlayer { closePlayer() } else { systemDismiss() }
+    }
+
     private func zap(by step: Int) {
         guard channels.count > 1 else { return }
         Haptics.select()
         index = (index + step + channels.count) % channels.count
         model.play(channel.streamUrl, debounce: true, is4K: channel.quality == "4K")
         withAnimation(.easeOut(duration: 0.18)) { chromeVisible = true }
+        scheduleHide()
+    }
+
+    private func showChromeBriefly() {
+        if !chromeVisible { withAnimation(.easeOut(duration: 0.18)) { chromeVisible = true } }
         scheduleHide()
     }
 
@@ -364,8 +431,10 @@ final class LivePlayerModel {
     init(muted: Bool = false) {
         player.isMuted = muted
         // Sound plays even with the silent switch on, as in other video apps.
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         observation = player.observe(\.timeControlStatus) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
@@ -504,6 +573,7 @@ final class LivePlayerModel {
     }
 }
 
+#if os(iOS)
 /// Apple's AirPlay button (pick a TV or speaker), white to match the overlay.
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
@@ -550,6 +620,8 @@ struct PlayerLayerView: UIViewRepresentable {
         view.playerLayer.player = player
     }
 }
+
+#endif
 
 /// iPad: the channels you're zapping through, down the left of the live player, with what's on
 /// now. The playing one is white (the TV's focus look). Tap one to watch it.

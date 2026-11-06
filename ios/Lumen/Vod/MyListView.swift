@@ -21,7 +21,7 @@ struct MyListView: View {
                     EmptyTab(title: "My List", message: "Films and series you save with the heart show up here.")
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navBar(.hidden)
         }
     }
 

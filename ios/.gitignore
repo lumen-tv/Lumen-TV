@@ -7,3 +7,9 @@ DerivedData/
 build/
 # Written by XcodeGen from project.yml.
 Lumen/Info.plist
+# Written by XcodeGen (Mac app).
+Mac/Info.plist
+Mac/Lumen.entitlements
+Lumen/Lumen.entitlements
+# Mac release builds (./mac-release.sh).
+dist/

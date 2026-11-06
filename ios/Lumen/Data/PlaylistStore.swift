@@ -1,6 +1,10 @@
 import Foundation
 import Observation
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit // `UIImage` is NSImage on the Mac (Mac/MacShims.swift)
+#endif
 import Shared
 
 /// A saved playlist. Only what's safe to keep in plain settings; the login is in the Keychain.

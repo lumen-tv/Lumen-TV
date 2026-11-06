@@ -17,10 +17,12 @@ struct TestPlayerView: View {
             .ignoresSafeArea(edges: .horizontal)
             .background(.black)
             .navigationTitle("Test video")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .onAppear {
                 // Play sound even with the silent switch on, as video apps do.
+                #if os(iOS)
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+                #endif
                 player.play()
             }
             .onDisappear { player.pause() }

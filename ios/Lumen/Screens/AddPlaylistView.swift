@@ -34,17 +34,17 @@ struct AddPlaylistView: View {
                     switch kind {
                     case .xtream:
                         TextField("Server, like http://example.com:8080", text: $server)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
+                            .urlKeyboard()
+                            .noAutoCapitals()
                             .autocorrectionDisabled()
                         TextField("Username", text: $username)
-                            .textInputAutocapitalization(.never)
+                            .noAutoCapitals()
                             .autocorrectionDisabled()
                         SecureField("Password", text: $password)
                     case .m3u:
                         TextField("Playlist link", text: $link)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
+                            .urlKeyboard()
+                            .noAutoCapitals()
                             .autocorrectionDisabled()
                     }
                 } footer: {
@@ -70,9 +70,13 @@ struct AddPlaylistView: View {
             .scrollContentBackground(.hidden)
             .background(AmbientBackground())
             .navigationTitle("Add playlist")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .disabled(adding)
             .interactiveDismissDisabled(adding)
+            #if os(macOS)
+            .formStyle(.grouped)
+            .frame(minWidth: 520, minHeight: 460)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

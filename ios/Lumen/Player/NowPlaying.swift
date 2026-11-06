@@ -1,5 +1,9 @@
 import MediaPlayer
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit // `UIImage` is NSImage on the Mac (Mac/MacShims.swift)
+#endif
 
 /// What's playing, on the lock screen, in Control Center and on a paired watch: the poster,
 /// title, timeline and play/pause/skip, as Apple's own player shows them. Both players (films

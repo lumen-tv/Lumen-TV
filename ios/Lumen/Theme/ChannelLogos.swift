@@ -1,7 +1,11 @@
 import CoreGraphics
 import Shared
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit // `UIImage` is NSImage on the Mac (Mac/MacShims.swift)
+#endif
 
 /// A channel logo from tv-logos, ready to draw.
 struct ChannelLogoArt {

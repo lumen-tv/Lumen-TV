@@ -15,7 +15,9 @@ struct VodPlayerView: View {
     let playback: VodPlayback
     let playlist: Playlist
     @Environment(PlaylistStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    /// Mac: the player sits in the window (`PlayerStage`), not in a cover iOS can dismiss.
+    @Environment(\.closePlayer) private var closePlayer
     @State private var model = VodPlayerModel()
     /// Swipe down to close: how far the picture has been pulled down.
     @State private var pull: CGFloat = 0
@@ -64,6 +66,18 @@ struct VodPlayerView: View {
             .ignoresSafeArea()
             .opacity(model.engine == .apple ? 1 : 0)
 
+            #if os(macOS)
+            // Mac: a click shows or hides the controls at once; a double click is full screen.
+            MacClickSurface(
+                click: { toggleControls() },
+                doubleClick: { MacWindow.toggleFullScreen() },
+                pinch: { amount in
+                    if amount > 0.08, !model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(true) } }
+                    if amount < -0.08, model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(false) } }
+                }
+            )
+            .ignoresSafeArea()
+            #else
             // Double-tap halves: back 10 s on the left, forward 10 s on the right; one tap toggles
             // the controls. (The double tap is declared first so a single tap waits for it.)
             HStack(spacing: 0) {
@@ -81,6 +95,7 @@ struct VodPlayerView: View {
                     if value.magnification < 0.92, model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(false) } }
                 }
             )
+            #endif
             if let tapJump {
                 JumpRipple(side: tapJump.side, seconds: tapJump.seconds)
                     .id(tapJump.at)
@@ -112,14 +127,16 @@ struct VodPlayerView: View {
                     .padding(20)
                     .glass(fill: .black.opacity(0.6))
             }
-            if controlsVisible { controls.transition(.opacity) }
-            SkipLayer(model: model, skips: skips, hasNext: !queue.isEmpty, scrubbing: scrubbing,
-                      dismissed: $skipDismissed, controlsVisible: controlsVisible) { offer in
-                if let target = offer.target {
-                    model.seek(to: target)
-                } else {
-                    saveProgress(finished: true) // the credits count as watched
-                    playNext()
+            if controlsVisible, !LumenPlatform.playerIsMini { controls.transition(.opacity) }
+            if !LumenPlatform.playerIsMini {
+                SkipLayer(model: model, skips: skips, hasNext: !queue.isEmpty, scrubbing: scrubbing,
+                          dismissed: $skipDismissed, controlsVisible: controlsVisible) { offer in
+                    if let target = offer.target {
+                        model.seek(to: target)
+                    } else {
+                        saveProgress(finished: true) // the credits count as watched
+                        playNext()
+                    }
                 }
             }
         }
@@ -144,8 +161,42 @@ struct VodPlayerView: View {
                     }
                 }
         )
+        // Mac: the keyboard (Space pause, ← → 10 s, Esc close, F full screen) and the mouse.
+        .macPlayerKeys { key in
+            switch key {
+            case .space: model.togglePause(); showControls()
+            case .left: model.skip(-10); showControls()
+            case .right: model.skip(10); showControls()
+            case .escape: if panel != nil { panel = nil } else { dismiss() }
+            case .up, .down: return false
+            }
+            return true
+        }
+        .macMouseMoved { showControls() }
+        #if os(macOS)
+        // Two fingers: sideways seeks (one jump when they lift), up and down is the volume.
+        .macPlayerScroll(
+            blocked: { panel != nil },
+            seek: { showSwipe($0) },
+            seekEnded: { finishSwipe($0) },
+            volume: { volume.set(volume.level + $0); showControls() }
+        )
+        .macPlayback(refresh: queue.count) {
+            MacPlaybackActions(
+                isPlaying: { model.isPlaying },
+                togglePause: { model.togglePause(); showControls() },
+                back: { model.skip(-10); showControls() },
+                forward: { model.skip(10); showControls() },
+                nextEpisode: queue.isEmpty ? nil : { saveProgress(); playNext() },
+                audioTracks: { model.audioTracks() },
+                subtitleTracks: { model.subtitleTracks() },
+                selectAudio: { model.selectAudio($0) },
+                selectSubtitle: { model.selectSubtitle($0) }
+            )
+        }
+        #endif
         .landscapeVideo()
-        .statusBarHidden(!controlsVisible)
+        .hideStatusBar(!controlsVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
             model.start(current.streamUrl, at: current.startAt, expectedLength: current.progress.duration)
@@ -203,6 +254,15 @@ struct VodPlayerView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     PlayerCircleButton(systemImage: "xmark", label: "Close") { dismiss() }
+                    #if os(macOS)
+                    // Mac: full screen and back (also F, or the window's green button).
+                    PlayerCircleButton(systemImage: "arrow.up.left.and.arrow.down.right", label: "Full screen") {
+                        MacWindow.toggleFullScreen()
+                    }
+                    PlayerCircleButton(systemImage: "pip", label: "Mini player") {
+                        PlayerStage.shared.toggleMini()
+                    }
+                    #endif
                     PlayerCapsule {
                         pipButton
                         AirPlayButton().frame(width: 52, height: 44).accessibilityLabel("AirPlay")
@@ -272,6 +332,8 @@ struct VodPlayerView: View {
             }
             .padding(.horizontal, wide ? 32 : 20)
             .padding(.vertical, wide ? 20 : 14)
+            // Mac: below the window's close / minimise / full screen buttons.
+            .padding(.top, LumenPlatform.isMac ? 28 : 0)
             .animation(.easeOut(duration: 0.22), value: panel)
         }
         .background(HiddenVolumeView(volume: volume).frame(width: 1, height: 1))
@@ -279,7 +341,7 @@ struct VodPlayerView: View {
 
     @ViewBuilder
     private var pipButton: some View {
-        if model.engine == .vlc, let vlcPiP {
+        if model.engine == .vlc, let vlcPiP, !LumenPlatform.isMac || vlcPiP.isPossible {
             Button { vlcPiP.toggle() } label: {
                 PlayerIcon(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter")
             }
@@ -312,6 +374,33 @@ struct VodPlayerView: View {
         }
         updateNowPlaying()
     }
+
+    #if os(macOS)
+    /// Seconds for a two-finger swipe of that many points, in 5 s steps (a long swipe is minutes).
+    private func swipeSeconds(_ points: CGFloat) -> Int { Int((points * 0.5 / 5).rounded()) * 5 }
+
+    private func showSwipe(_ points: CGFloat) {
+        let seconds = swipeSeconds(points)
+        guard seconds != 0 else { tapJump = nil; return }
+        // The same date while the fingers are down, so the ripple's number changes in place.
+        withAnimation(.easeOut(duration: 0.15)) { tapJump = (seconds > 0 ? 1 : -1, abs(seconds), tapJump?.at ?? .now) }
+        showControls()
+    }
+
+    private func finishSwipe(_ points: CGFloat) {
+        let seconds = swipeSeconds(points)
+        guard seconds != 0 else { tapJump = nil; return }
+        model.skip(Int32(seconds))
+        showControls()
+        updateNowPlaying()
+        let at = tapJump?.at
+        Task {
+            try? await Task.sleep(for: .seconds(0.8))
+            guard tapJump?.at == at else { return }
+            withAnimation(.easeOut(duration: 0.3)) { tapJump = nil }
+        }
+    }
+    #endif
 
     private func showNowPlaying() {
         let token = NowPlaying.shared.begin(
@@ -425,6 +514,10 @@ struct VodPlayerView: View {
         item.updated = .now
         if item.kind == .series { item.next = queue.first?.progress.title }
         store.saveProgress(item, in: playlist, quietly: quietly)
+    }
+
+    private func dismiss() {
+        if let closePlayer { closePlayer() } else { systemDismiss() }
     }
 
     private func toggleControls() {

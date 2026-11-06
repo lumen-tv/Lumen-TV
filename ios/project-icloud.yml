@@ -11,3 +11,15 @@ targets:
       path: Lumen/Lumen.entitlements
       properties:
         com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(CFBundleIdentifier)
+  LumenMac:
+    entitlements:
+      path: Mac/Lumen.entitlements
+      properties:
+        # The iPhone/iPad app's iCloud store and keychain, so favourites, My List, progress and
+        # playlist logins are the same on the Mac.
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)com.hayat.lumen
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.hayat.lumen
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: ["$(inherited)", "LUMEN_ICLOUD"]

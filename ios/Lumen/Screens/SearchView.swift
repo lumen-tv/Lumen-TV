@@ -39,7 +39,7 @@ struct SearchView: View {
             .scrollDismissesKeyboard(.immediately)
             .belowTopBar()
             .background(AmbientBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .navBar(.hidden)
             .modifier(Destinations(playlist: store.selected))
         }
         .playerCover($playing)
@@ -95,6 +95,7 @@ struct SearchView: View {
             .buttonStyle(TileButtonStyle())
             .padding(.horizontal, wide ? -48 : -20)
             .contentMargins(.horizontal, wide ? 48 : 20, for: .scrollContent)
+            .macRowArrows()
         }
     }
 

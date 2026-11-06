@@ -1,4 +1,4 @@
-# XcodeGen spec for the iPhone/iPad app. The .xcodeproj is generated from this file and not
+# XcodeGen spec for the iPhone/iPad app and the Mac app (LumenMac, the same screens; see docs/MAC.md). The .xcodeproj is generated from this file and not
 # committed (it's a large machine-written file that merges badly). Run ./generate.sh after
 # pulling, then open Lumen.xcodeproj. See docs/IOS.md.
 name: Lumen
@@ -6,6 +6,8 @@ options:
   bundleIdPrefix: com.hayat
   deploymentTarget:
     iOS: "18.0"
+    # SwiftVLC's minimum on the Mac.
+    macOS: "15.0"
   createIntermediateGroups: true
 configFiles:
   Debug: Config/Signing.xcconfig
@@ -35,6 +37,16 @@ schemes:
     build:
       targets:
         Lumen: all
+    run:
+      config: Release
+    profile:
+      config: Release
+    archive:
+      config: Release
+  LumenMac:
+    build:
+      targets:
+        LumenMac: all
     run:
       config: Release
     profile:
@@ -104,3 +116,60 @@ targets:
           NSAllowsArbitraryLoads: true
         # Only standard HTTPS, so no export-compliance paperwork on each upload.
         ITSAppUsesNonExemptEncryption: false
+
+  # The Mac app: the iPhone/iPad screens (Lumen/), minus the few iPhone-only files, plus Mac/
+  # (AppKit stand-ins, the menu bar, players in the window, updates). Not in the App Store: it's
+  # signed with Developer ID, notarized and shipped as a DMG (docs/MAC.md, ./mac-release.sh).
+  LumenMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Lumen
+        excludes:
+          - App/QuickActions.swift
+          - Player/ScreenOrientation.swift
+          - Player/AudioSession.swift
+          - Theme/Haptics.swift
+      - path: Mac
+    dependencies:
+      - package: SwiftVLC
+    preBuildScripts:
+      - name: Build shared Kotlin code
+        script: "\"$SRCROOT/build-shared.sh\""
+        basedOnDependencyAnalysis: false
+    settings:
+      base:
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        OTHER_LDFLAGS: ["$(inherited)", "-framework", "Shared"]
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # Its own id, so it never clashes with the iPad app on Apple-silicon Macs. iCloud and the
+        # keychain are shared with the iPhone/iPad app through Mac/Lumen.entitlements.
+        PRODUCT_BUNDLE_IDENTIFIER: com.hayat.lumen.mac
+        # The Mac app's own version (the iPhone app's is above). Bump it for each DMG.
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        PRODUCT_NAME: Lumen
+        # Apple-silicon Macs (the shared Kotlin code is built for arm64 only).
+        ARCHS: arm64
+        CODE_SIGN_STYLE: Automatic
+        # Needed for Apple's notarization (Gatekeeper opens the DMG without warnings).
+        ENABLE_HARDENED_RUNTIME: YES
+        # The Mac's icon shape (Mac/MacAssets.xcassets); the iPhone one is a plain square.
+        ASSETCATALOG_COMPILER_APPICON_NAME: MacAppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Release builds on the Mac: smaller, and Swift's optimiser on.
+        DEAD_CODE_STRIPPING: YES
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: Lumen
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.entertainment
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHumanReadableCopyright: "2026 Lumen"
+        # Inter, from the app's Resources folder (the Mac's way of bundling fonts).
+        ATSApplicationFontsPath: "."
+        # Most IPTV servers are plain http.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true

@@ -325,6 +325,19 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   (cloud sessions are Linux: they can't build or check Swift). Hayat has a paid developer account since 2026-10-31 (team id in the uncommitted
   `ios/Config/Local.xcconfig`). App Store rules for the iOS build: no bundled content or provider links, no `BrandLogos` tiles, ratings as plain
   text, no self-updater, http allowed via ATS (`NSAllowsArbitraryLoads`), passwords in the Keychain, `PrivacyInfo.xcprivacy`.
+- **Mac** (target `LumenMac` in `ios/project.yml`, docs/MAC.md, 2026-11-06): the iOS SwiftUI screens built for macOS 15+
+  (Apple silicon; `shared` has `macosArm64`, `iosMain` became `appleMain`), plus `ios/Mac/` (UIKit stand-ins, menu bar,
+  players shown full-window by `PlayerStage` since macOS has no fullScreenCover, player keys, CoreAudio volume, updates).
+  iOS-vs-Mac differences go through `ios/Lumen/Theme/Platform.swift` helpers or `#if os(macOS)`. Bundle id
+  `com.hayat.lumen.mac`, sharing iCloud KVS + keychain group with the iOS app (`project-icloud.yml`). Not in the App Store:
+  Developer ID + notarized DMG via `ios/mac-release.sh`, uploaded to the GitHub release tagged `mac` (never "latest": the
+  TV app reads latest); the app checks that release (`MacUpdates`). Website: lumen-tv.github.io/mac.
+  Mac-only features (Hayat 2026-11-06, tried the build with the mini player, toolbar and menu fixes: "perfect"): hover + row arrows (`MacHover`), mini player
+  (`MacMiniPlayer`; `PlayerStage` gives each player an `NSHostingView` that moves with a direct `addSubview`, never
+  `removeFromSuperview`, into a `holder` that never leaves the window, so the stream isn't reopened), Playback menu via the `MacPlayback` registry, two-finger seek and
+  volume plus AppKit click counts (`MacPlayerInput`), Settings "Full screen when playing" (`macAutoFullScreen`).
+  While a player fills the window its toolbar is hidden with AppKit's `toolbar.isVisible` (`MacWindow.updateChrome`); SwiftUI's
+  `.toolbar(.hidden, for: .windowToolbar)` also removes the traffic lights. Mac `Menu`s with custom labels need `.plainMenu()`.
 - Shared debug keystore in `keystore/`: signs debug builds and local release builds, so cloud and laptop builds install
   over each other. It can't install over a published (privately signed) release, or the reverse.
 - Backups disabled (`allowBackup=false` + `data_extraction_rules.xml`): credentials stay on the device.

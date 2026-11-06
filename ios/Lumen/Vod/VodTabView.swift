@@ -22,7 +22,7 @@ struct VodTabView: View {
                     EmptyTab(title: title, message: "Films and series from your Xtream login show up here.")
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navBar(.hidden)
         }
     }
 
@@ -116,18 +116,18 @@ private struct VodDestinations: ViewModifier {
             .environment(\.playVod, { quickPlay = $0 })
             .navigationDestination(for: Movie.self) {
                 MovieDetailView(movie: $0, playlist: playlist).pushedPage()
-                    .navigationTransition(.zoom(sourceID: ZoomID.movie($0.id), in: zoom))
+                    .zoomOpen(from: ZoomID.movie($0.id), in: zoom)
             }
             .navigationDestination(for: Series.self) {
                 SeriesDetailView(series: $0, playlist: playlist).pushedPage()
-                    .navigationTransition(.zoom(sourceID: ZoomID.series($0.id), in: zoom))
+                    .zoomOpen(from: ZoomID.series($0.id), in: zoom)
             }
             .navigationDestination(for: VodCategoryRoute.self) {
                 VodGridView(route: $0, playlist: playlist).pushedPage()
                     .environment(\.vodZoom, zoom)
                     .environment(\.playVod, { quickPlay = $0 })
             }
-            .fullScreenCover(item: $quickPlay) { VodPlayerView(playback: $0, playlist: playlist) }
+            .fullWindowCover(item: $quickPlay) { VodPlayerView(playback: $0, playlist: playlist) }
     }
 }
 
@@ -195,6 +195,7 @@ struct PosterRow<Content: View>: View {
                 LazyHStack(alignment: .top, spacing: wide ? 18 : 12) { content() }
                     .lumenGutter(wide)
             }
+            .macRowArrows()
             .buttonStyle(TileButtonStyle())
         }
     }
@@ -278,6 +279,7 @@ struct ContinueWatchingRow: View {
                     }
                     .lumenGutter(wide)
                 }
+                .macRowArrows()
                 .buttonStyle(TileButtonStyle())
             }
         }
@@ -370,8 +372,8 @@ struct VodGridView: View {
             .padding(wide ? 48 : 16)
         }
         .background(AmbientBackground())
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navBar(.visible)
+        .clearNavBar()
         .navigationTitle(store.vodCategoryTitle(route.category, route.kind, in: playlist))
         .searchable(text: $search, prompt: "Search this category")
     }
