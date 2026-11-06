@@ -116,11 +116,11 @@ private struct VodDestinations: ViewModifier {
             .environment(\.playVod, { quickPlay = $0 })
             .navigationDestination(for: Movie.self) {
                 MovieDetailView(movie: $0, playlist: playlist).pushedPage()
-                    .navigationTransition(.zoom(sourceID: ZoomID.movie($0.id), in: zoom))
+                    .zoomOpen(from: ZoomID.movie($0.id), in: zoom)
             }
             .navigationDestination(for: Series.self) {
                 SeriesDetailView(series: $0, playlist: playlist).pushedPage()
-                    .navigationTransition(.zoom(sourceID: ZoomID.series($0.id), in: zoom))
+                    .zoomOpen(from: ZoomID.series($0.id), in: zoom)
             }
             .navigationDestination(for: VodCategoryRoute.self) {
                 VodGridView(route: $0, playlist: playlist).pushedPage()

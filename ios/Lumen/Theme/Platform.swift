@@ -66,6 +66,17 @@ extension View {
         #endif
     }
 
+    /// The page zooms out of the tapped poster on iPhone/iPad. macOS has no zoom transition, so a
+    /// page there just opens.
+    @ViewBuilder
+    func zoomOpen(from id: some Hashable, in namespace: Namespace.ID) -> some View {
+        #if os(iOS)
+        navigationTransition(.zoom(sourceID: id, in: namespace))
+        #else
+        self
+        #endif
+    }
+
     /// The players: full screen over everything on iPhone/iPad. On the Mac they fill the
     /// window (F or the green button makes the window full screen), shown by `PlayerStage`
     /// at the root, because macOS has no full-screen cover.
