@@ -83,7 +83,7 @@ struct LivePlayerView: View {
                     .glass(fill: Color.black.opacity(0.6))
                     .padding(32)
             }
-            if chromeVisible { chrome.transition(.opacity) }
+            if chromeVisible, !LumenPlatform.playerIsMini { chrome.transition(.opacity) }
             if listAllowed { channelList }
         }
         .contentShape(Rectangle())
@@ -110,6 +110,16 @@ struct LivePlayerView: View {
             return true
         }
         .macMouseMoved { showChromeBriefly() }
+        #if os(macOS)
+        .macPlayback(refresh: channels.count) {
+            MacPlaybackActions(
+                isPlaying: { !model.paused },
+                togglePause: { model.togglePause(); showChromeBriefly() },
+                previousChannel: channels.count > 1 ? { zap(by: -1) } : nil,
+                nextChannel: channels.count > 1 ? { zap(by: 1) } : nil
+            )
+        }
+        #endif
         .hideStatusBar(!chromeVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
@@ -143,6 +153,9 @@ struct LivePlayerView: View {
                     // Mac: full screen and back (also F, or the window's green button).
                     PlayerCircleButton(systemImage: "arrow.up.left.and.arrow.down.right", label: "Full screen") {
                         MacWindow.toggleFullScreen()
+                    }
+                    PlayerCircleButton(systemImage: "pip", label: "Mini player") {
+                        PlayerStage.shared.toggleMini()
                     }
                     #endif
                     PlayerCapsule {

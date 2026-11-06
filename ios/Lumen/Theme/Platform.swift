@@ -172,6 +172,15 @@ enum LumenPlatform {
     #else
     static let isMac = false
     #endif
+
+    /// Mac: the player is in the mini player, which has its own buttons. Never on iPhone/iPad.
+    @MainActor static var playerIsMini: Bool {
+        #if os(macOS)
+        PlayerStage.shared.isMini
+        #else
+        false
+        #endif
+    }
 }
 
 extension EnvironmentValues {

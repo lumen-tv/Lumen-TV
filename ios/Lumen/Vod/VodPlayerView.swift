@@ -114,14 +114,16 @@ struct VodPlayerView: View {
                     .padding(20)
                     .glass(fill: .black.opacity(0.6))
             }
-            if controlsVisible { controls.transition(.opacity) }
-            SkipLayer(model: model, skips: skips, hasNext: !queue.isEmpty, scrubbing: scrubbing,
-                      dismissed: $skipDismissed, controlsVisible: controlsVisible) { offer in
-                if let target = offer.target {
-                    model.seek(to: target)
-                } else {
-                    saveProgress(finished: true) // the credits count as watched
-                    playNext()
+            if controlsVisible, !LumenPlatform.playerIsMini { controls.transition(.opacity) }
+            if !LumenPlatform.playerIsMini {
+                SkipLayer(model: model, skips: skips, hasNext: !queue.isEmpty, scrubbing: scrubbing,
+                          dismissed: $skipDismissed, controlsVisible: controlsVisible) { offer in
+                    if let target = offer.target {
+                        model.seek(to: target)
+                    } else {
+                        saveProgress(finished: true) // the credits count as watched
+                        playNext()
+                    }
                 }
             }
         }
@@ -158,6 +160,21 @@ struct VodPlayerView: View {
             return true
         }
         .macMouseMoved { showControls() }
+        #if os(macOS)
+        .macPlayback(refresh: queue.count) {
+            MacPlaybackActions(
+                isPlaying: { model.isPlaying },
+                togglePause: { model.togglePause(); showControls() },
+                back: { model.skip(-10); showControls() },
+                forward: { model.skip(10); showControls() },
+                nextEpisode: queue.isEmpty ? nil : { saveProgress(); playNext() },
+                audioTracks: { model.audioTracks() },
+                subtitleTracks: { model.subtitleTracks() },
+                selectAudio: { model.selectAudio($0) },
+                selectSubtitle: { model.selectSubtitle($0) }
+            )
+        }
+        #endif
         .landscapeVideo()
         .hideStatusBar(!controlsVisible)
         .persistentSystemOverlays(.hidden)
@@ -221,6 +238,9 @@ struct VodPlayerView: View {
                     // Mac: full screen and back (also F, or the window's green button).
                     PlayerCircleButton(systemImage: "arrow.up.left.and.arrow.down.right", label: "Full screen") {
                         MacWindow.toggleFullScreen()
+                    }
+                    PlayerCircleButton(systemImage: "pip", label: "Mini player") {
+                        PlayerStage.shared.toggleMini()
                     }
                     #endif
                     PlayerCapsule {
