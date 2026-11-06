@@ -214,6 +214,7 @@ struct ChannelRowStyle: ButtonStyle {
             .foregroundStyle(configuration.isPressed ? LumenColors.background : LumenColors.textPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
+            .macHoverRow()
             .background(
                 configuration.isPressed ? Color.white : Color.clear,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)

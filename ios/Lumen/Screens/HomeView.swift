@@ -257,5 +257,6 @@ struct TileButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .brightness(configuration.isPressed ? -0.06 : 0)
             .animation(LumenMotion.press, value: configuration.isPressed)
+            .macHoverLift()
     }
 }

@@ -195,6 +195,7 @@ struct PosterRow<Content: View>: View {
                 LazyHStack(alignment: .top, spacing: wide ? 18 : 12) { content() }
                     .lumenGutter(wide)
             }
+            .macRowArrows()
             .buttonStyle(TileButtonStyle())
         }
     }
@@ -278,6 +279,7 @@ struct ContinueWatchingRow: View {
                     }
                     .lumenGutter(wide)
                 }
+                .macRowArrows()
                 .buttonStyle(TileButtonStyle())
             }
         }

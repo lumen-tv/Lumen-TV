@@ -160,6 +160,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.8 : 1)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(LumenMotion.press, value: configuration.isPressed)
+            .macHoverHighlight()
     }
 }
 
@@ -174,6 +175,7 @@ struct GlassButtonStyle: ButtonStyle {
             .glass(cornerRadius: 999, fill: configuration.isPressed ? LumenColors.glassStrong : LumenColors.glass)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(LumenMotion.press, value: configuration.isPressed)
+            .macHoverHighlight()
     }
 }
 
@@ -191,6 +193,7 @@ struct PressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? scale : 1)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .animation(LumenMotion.press, value: configuration.isPressed)
+            .macHoverHighlight()
     }
 }
 
@@ -211,6 +214,7 @@ struct CircleGlassButton: View {
                 .glass(cornerRadius: size / 2, fill: fill)
         }
         .buttonStyle(.plain)
+        .macHoverHighlight()
         .accessibilityLabel(label)
     }
 }
@@ -235,6 +239,7 @@ struct ChipButton: View {
         }
         .buttonStyle(.plain)
         .animation(.easeOut(duration: 0.18), value: selected)
+        .macHoverHighlight()
     }
 }
 

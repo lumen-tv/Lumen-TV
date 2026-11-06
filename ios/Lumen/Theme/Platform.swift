@@ -69,6 +69,47 @@ extension View {
         #endif
     }
 
+    /// Mac: a poster, card or tile lifts under the pointer. Nothing on iPhone/iPad.
+    @ViewBuilder
+    func macHoverLift() -> some View {
+        #if os(macOS)
+        modifier(MacHoverLift())
+        #else
+        self
+        #endif
+    }
+
+    /// Mac: a button brightens under the pointer. Nothing on iPhone/iPad.
+    @ViewBuilder
+    func macHoverHighlight() -> some View {
+        #if os(macOS)
+        modifier(MacHoverHighlight())
+        #else
+        self
+        #endif
+    }
+
+    /// Mac: a list row gets a faint fill under the pointer. Nothing on iPhone/iPad.
+    @ViewBuilder
+    func macHoverRow() -> some View {
+        #if os(macOS)
+        modifier(MacHoverRow())
+        #else
+        self
+        #endif
+    }
+
+    /// Mac: < > buttons on a sideways row of posters or cards. Nothing on iPhone/iPad, where a
+    /// finger scrolls it.
+    @ViewBuilder
+    func macRowArrows() -> some View {
+        #if os(macOS)
+        modifier(MacRowArrows())
+        #else
+        self
+        #endif
+    }
+
     /// The page zooms out of the tapped poster on iPhone/iPad. macOS has no zoom transition, so a
     /// page there just opens.
     @ViewBuilder
