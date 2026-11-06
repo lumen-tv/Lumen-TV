@@ -332,7 +332,7 @@ and comment where Compose differs from SwiftUI in a non-obvious way.
   `com.hayat.lumen.mac`, sharing iCloud KVS + keychain group with the iOS app (`project-icloud.yml`). Not in the App Store:
   Developer ID + notarized DMG via `ios/mac-release.sh`, uploaded to the GitHub release tagged `mac` (never "latest": the
   TV app reads latest); the app checks that release (`MacUpdates`). Website: lumen-tv.github.io/mac.
-  Mac-only features (Hayat 2026-11-06; built, not yet run on screen): hover + row arrows (`MacHover`), mini player
+  Mac-only features (Hayat 2026-11-06, tried the build with the mini player, toolbar and menu fixes: "perfect"): hover + row arrows (`MacHover`), mini player
   (`MacMiniPlayer`; `PlayerStage` gives each player an `NSHostingView` that moves with a direct `addSubview`, never
   `removeFromSuperview`, into a `holder` that never leaves the window, so the stream isn't reopened), Playback menu via the `MacPlayback` registry, two-finger seek and
   volume plus AppKit click counts (`MacPlayerInput`), Settings "Full screen when playing" (`macAutoFullScreen`).
