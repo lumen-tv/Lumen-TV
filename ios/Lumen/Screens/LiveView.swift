@@ -24,8 +24,8 @@ struct LiveChannelsView: View {
         }
         .background(AmbientBackground())
         .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .inlineTitle()
+        .clearNavBar()
         .playerCover($playing)
     }
 
@@ -129,7 +129,7 @@ struct SearchField: View {
             TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(LumenColors.textTertiary))
                 .font(LumenFont.body)
                 .foregroundStyle(LumenColors.textPrimary)
-                .textInputAutocapitalization(.never)
+                .noAutoCapitals()
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .focused($focused)
@@ -258,6 +258,15 @@ struct FavouritesEditView: View {
                         ChannelLogo(channel: channel, size: 36)
                         Text(channel.title).lineLimit(1)
                     }
+                    #if os(macOS)
+                    // Mac: drag rows to reorder; right-click (or select + Delete) to remove.
+                    .contextMenu {
+                        Button("Remove from Favourites", role: .destructive) {
+                            channels.removeAll { $0.key == channel.key }
+                            store.setFavourites(channels, in: playlist)
+                        }
+                    }
+                    #endif
                 }
                 .onMove { from, to in
                     channels.move(fromOffsets: from, toOffset: to)
@@ -270,11 +279,15 @@ struct FavouritesEditView: View {
             }
             .font(LumenFont.body)
             // Always in edit mode: drag handles and delete buttons show straight away.
+            #if os(iOS)
             .environment(\.editMode, .constant(.active))
+            #else
+            .frame(minWidth: 460, minHeight: 520)
+            #endif
             .scrollContentBackground(.hidden)
             .background(AmbientBackground())
             .navigationTitle("Favourites")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -288,7 +301,7 @@ struct FavouritesEditView: View {
 extension View {
     /// Presents the full-screen player for [route] (set by tapping a channel row).
     func playerCover(_ route: Binding<PlayerRoute?>) -> some View {
-        fullScreenCover(item: route) { route in
+        fullWindowCover(item: route) { route in
             LivePlayerView(channels: route.channels, startIndex: route.index)
                 .landscapeVideo()
         }

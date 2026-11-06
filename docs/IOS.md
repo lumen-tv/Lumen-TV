@@ -107,3 +107,7 @@ What the iOS build does differently from Android, because of App Store rules:
   review notes.
 - `PrivacyInfo.xcprivacy`: no tracking, no data collected. App Privacy label: "Data not collected".
 - Reviewers get a legal test playlist (to be hosted on lumen-tv.github.io), never a real login.
+
+## Mac app
+
+The same screens also build as a Mac app (scheme **LumenMac**). See [MAC.md](MAC.md).

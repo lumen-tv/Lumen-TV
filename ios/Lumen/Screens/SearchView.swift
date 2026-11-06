@@ -39,7 +39,7 @@ struct SearchView: View {
             .scrollDismissesKeyboard(.immediately)
             .belowTopBar()
             .background(AmbientBackground())
-            .toolbar(.hidden, for: .navigationBar)
+            .navBar(.hidden)
             .modifier(Destinations(playlist: store.selected))
         }
         .playerCover($playing)

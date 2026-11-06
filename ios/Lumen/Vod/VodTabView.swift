@@ -22,7 +22,7 @@ struct VodTabView: View {
                     EmptyTab(title: title, message: "Films and series from your Xtream login show up here.")
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navBar(.hidden)
         }
     }
 
@@ -127,7 +127,7 @@ private struct VodDestinations: ViewModifier {
                     .environment(\.vodZoom, zoom)
                     .environment(\.playVod, { quickPlay = $0 })
             }
-            .fullScreenCover(item: $quickPlay) { VodPlayerView(playback: $0, playlist: playlist) }
+            .fullWindowCover(item: $quickPlay) { VodPlayerView(playback: $0, playlist: playlist) }
     }
 }
 
@@ -370,8 +370,8 @@ struct VodGridView: View {
             .padding(wide ? 48 : 16)
         }
         .background(AmbientBackground())
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navBar(.visible)
+        .clearNavBar()
         .navigationTitle(store.vodCategoryTitle(route.category, route.kind, in: playlist))
         .searchable(text: $search, prompt: "Search this category")
     }

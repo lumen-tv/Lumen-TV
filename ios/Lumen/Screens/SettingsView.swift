@@ -68,7 +68,7 @@ struct SettingsView: View {
             .belowTopBar()
             .background(AmbientBackground())
             .navigationTitle("Settings")
-            .toolbar(wide ? .hidden : .automatic, for: .navigationBar)
+            .navBar(wide ? .hidden : .automatic)
             .sheet(isPresented: $addingPlaylist) { AddPlaylistView() }
         }
     }
@@ -215,7 +215,7 @@ struct PlaylistSettingsView: View {
             }
             if current.kind == .xtream {
                 Section {
-                    TextField("Server", text: $server).keyboardType(.URL)
+                    TextField("Server", text: $server).urlKeyboard()
                     TextField("Username", text: $username)
                     SecureField("New password (blank keeps the old one)", text: $password)
                     saveButton("Save login") {
@@ -231,7 +231,7 @@ struct PlaylistSettingsView: View {
             } else {
                 Section {
                     // The old link is never shown: it can hold a password.
-                    TextField("New playlist link", text: $link).keyboardType(.URL)
+                    TextField("New playlist link", text: $link).urlKeyboard()
                     saveButton("Save link") {
                         try await store.changeM3u(current, link: link)
                         link = ""
@@ -244,7 +244,7 @@ struct PlaylistSettingsView: View {
                 }
             }
             Section {
-                TextField("Guide link (XMLTV)", text: $guide).keyboardType(.URL)
+                TextField("Guide link (XMLTV)", text: $guide).urlKeyboard()
                 Button("Save guide link") {
                     Task { await store.setGuideUrl(current, guide); message = "Guide link saved." }
                 }
@@ -261,7 +261,7 @@ struct PlaylistSettingsView: View {
             }
         }
         .font(LumenFont.body)
-        .textInputAutocapitalization(.never)
+        .noAutoCapitals()
         .autocorrectionDisabled()
         .scrollContentBackground(.hidden)
         .background(AmbientBackground())
@@ -394,7 +394,7 @@ struct CategorySettingsView: View {
         .navigationTitle(title)
         .searchable(text: $search, prompt: "Search categories")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .lumenTrailing) {
                 Menu {
                     Button("Show all", systemImage: "eye") { store.setHidden(shown.map(\.key), false, in: playlist) }
                     Button("Hide all", systemImage: "eye.slash") { store.setHidden(shown.map(\.key), true, in: playlist) }
@@ -470,7 +470,7 @@ struct RatingsSettingsView: View {
             }
         }
         .font(LumenFont.body)
-        .textInputAutocapitalization(.never)
+        .noAutoCapitals()
         .autocorrectionDisabled()
         .scrollContentBackground(.hidden)
         .background(AmbientBackground())

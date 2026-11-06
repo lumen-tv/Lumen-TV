@@ -8,6 +8,24 @@ import Security
 enum Keychain {
     private static let service = "com.hayat.lumen.playlist"
 
+    /// Mac: the same iCloud-synced keychain as iPhone/iPad (the "data protection" keychain,
+    /// shared through the keychain group in Mac/Lumen.entitlements) when the build has iCloud.
+    /// Without it, the Mac's login keychain, which can't sync.
+    #if os(macOS) && !LUMEN_ICLOUD
+    private static let syncs = false
+    #else
+    private static let syncs = true
+    #endif
+
+    private static func platform(_ query: [String: Any]) -> [String: Any] {
+        var query = query
+        #if os(macOS)
+        if syncs { query[kSecUseDataProtectionKeychain as String] = true }
+        #endif
+        if !syncs { query.removeValue(forKey: kSecAttrSynchronizable as String) }
+        return query
+    }
+
     static func save(_ data: Data, for account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -16,14 +34,14 @@ enum Keychain {
         ]
         var any = query
         any[kSecAttrSynchronizable as String] = kSecAttrSynchronizableAny
-        SecItemDelete(any as CFDictionary)
+        SecItemDelete(platform(any) as CFDictionary)
         var item = query
         item[kSecValueData as String] = data
         item[kSecAttrSynchronizable as String] = kCFBooleanTrue
         // Readable after the first unlock since the device started. (Not "ThisDeviceOnly":
         // those can't sync.)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(item as CFDictionary, nil)
+        SecItemAdd(platform(item) as CFDictionary, nil)
     }
 
     static func load(_ account: String) -> Data? {
@@ -36,7 +54,7 @@ enum Keychain {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+        guard SecItemCopyMatching(platform(query) as CFDictionary, &result) == errSecSuccess else { return nil }
         return result as? Data
     }
 
@@ -47,6 +65,6 @@ enum Keychain {
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
         ]
-        SecItemDelete(query as CFDictionary)
+        SecItemDelete(platform(query) as CFDictionary)
     }
 }

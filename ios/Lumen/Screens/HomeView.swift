@@ -23,7 +23,7 @@ struct HomeView: View {
                     EmptyTab(title: "Live TV", message: "Add your playlist or Xtream login to see your channels.")
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navBar(.hidden)
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .allChannels: LiveChannelsView().pushedPage()

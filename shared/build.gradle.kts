@@ -2,7 +2,7 @@
 // iPhone/iPad app (as an Apple framework called "Shared", which Swift imports).
 //
 // Kotlin Multiplatform splits code into source sets: commonMain is plain Kotlin that runs
-// everywhere; androidMain / iosMain hold the few platform-specific bits (`expect`/`actual`,
+// everywhere; androidMain / appleMain hold the few platform-specific bits (`expect`/`actual`,
 // roughly like `#if os(iOS)` but checked by the compiler).
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -19,8 +19,8 @@ kotlin {
         withHostTest {}
     }
 
-    // iPhone/iPad devices, and the Simulator on Apple-silicon Macs.
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+    // iPhone/iPad devices, the Simulator on Apple-silicon Macs, and the Mac app (Apple silicon).
+    listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "Shared"
             isStatic = true
@@ -41,7 +41,8 @@ kotlin {
             implementation(libs.kotlinx.serialization.json.io)
             implementation(libs.kotlinx.io.core)
         }
-        iosMain.dependencies {
+        // appleMain = iPhone, iPad and Mac (the same Apple networking and text APIs).
+        appleMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {

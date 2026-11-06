@@ -15,7 +15,9 @@ struct VodPlayerView: View {
     let playback: VodPlayback
     let playlist: Playlist
     @Environment(PlaylistStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    /// Mac: the player sits in the window (`PlayerStage`), not in a cover iOS can dismiss.
+    @Environment(\.closePlayer) private var closePlayer
     @State private var model = VodPlayerModel()
     /// Swipe down to close: how far the picture has been pulled down.
     @State private var pull: CGFloat = 0
@@ -144,8 +146,20 @@ struct VodPlayerView: View {
                     }
                 }
         )
+        // Mac: the keyboard (Space pause, ← → 10 s, Esc close, F full screen) and the mouse.
+        .macPlayerKeys { key in
+            switch key {
+            case .space: model.togglePause(); showControls()
+            case .left: model.skip(-10); showControls()
+            case .right: model.skip(10); showControls()
+            case .escape: if panel != nil { panel = nil } else { dismiss() }
+            case .up, .down: return false
+            }
+            return true
+        }
+        .macMouseMoved { showControls() }
         .landscapeVideo()
-        .statusBarHidden(!controlsVisible)
+        .hideStatusBar(!controlsVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
             model.start(current.streamUrl, at: current.startAt)
@@ -279,7 +293,7 @@ struct VodPlayerView: View {
 
     @ViewBuilder
     private var pipButton: some View {
-        if model.engine == .vlc, let vlcPiP {
+        if model.engine == .vlc, let vlcPiP, !LumenPlatform.isMac || vlcPiP.isPossible {
             Button { vlcPiP.toggle() } label: {
                 PlayerIcon(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter")
             }
@@ -425,6 +439,10 @@ struct VodPlayerView: View {
         item.updated = .now
         if item.kind == .series { item.next = queue.first?.progress.title }
         store.saveProgress(item, in: playlist, quietly: quietly)
+    }
+
+    private func dismiss() {
+        if let closePlayer { closePlayer() } else { systemDismiss() }
     }
 
     private func toggleControls() {

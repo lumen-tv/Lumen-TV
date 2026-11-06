@@ -27,7 +27,9 @@ final class PictureInPicture: NSObject {
         controller?.delegate = nil
         possible = nil
         let controller = AVPictureInPictureController(contentSource: .init(playerLayer: layer))
+        #if os(iOS)
         controller.canStartPictureInPictureAutomaticallyFromInline = true
+        #endif
         controller.delegate = self
         possible = controller.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] controller, _ in
             let value = controller.isPictureInPicturePossible

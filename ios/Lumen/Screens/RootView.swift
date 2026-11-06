@@ -6,7 +6,9 @@ import SwiftUI
 /// bar at the bottom, where the thumb is. The system TabView isn't used because its look can't
 /// be changed to match the TV.
 struct RootView: View {
+    #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
     @State private var tab: AppTab = .live
     /// The tab open when the app was last used, opened again at launch (not Settings).
     @AppStorage("lastTab") private var lastTab = AppTab.live.rawValue
@@ -34,8 +36,16 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// A film or episode started from the Home Screen icon's "Continue watching".
     @State private var quickPlay: QuickPlay?
+    #if os(macOS)
+    @State private var windowSize = CGSize(width: 1440, height: 900)
+    #endif
 
+    #if os(iOS)
     private var wide: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular }
+    #else
+    /// Mac: always the iPad's full-width layout (top pill and clock).
+    private let wide = true
+    #endif
 
     var body: some View {
         // iPad: the pill floats over the page, as on the TV, so each page's colours and pictures
@@ -94,6 +104,21 @@ struct RootView: View {
         // The keyboard covers the bar instead of pushing it up, except while searching: then
         // the field rides up on top of the keyboard.
         .ignoresSafeArea(.keyboard, edges: searching ? [] : .bottom)
+        #if os(macOS)
+        // Mac: the players fill the window above everything (`PlayerStage`), the menu bar can
+        // open a tab, and the backgrounds follow the window's size.
+        .playerStage()
+        .formStyle(.grouped)
+        .macUpdateAlerts()
+        .onChange(of: MacMenu.shared.requestedTab) { _, requested in
+            guard let requested else { return }
+            MacMenu.shared.requestedTab = nil
+            if searching { endSearch() }
+            if requested != tab { select(requested) }
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
+        .environment(\.screenSize, windowSize)
+        #endif
         .environment(\.lumenWide, wide)
         .environment(\.openSearch, startSearch)
         .onAppear {
@@ -111,7 +136,7 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { QuickActions.shared.refresh(store: store) }
         }
-        .fullScreenCover(item: $quickPlay) { VodPlayerView(playback: $0.playback, playlist: $0.playlist) }
+        .fullWindowCover(item: $quickPlay) { VodPlayerView(playback: $0.playback, playlist: $0.playlist) }
     }
 
     private func perform(_ action: QuickActions.Action) async {
@@ -372,7 +397,7 @@ struct BarSearchField: View {
                       prompt: Text("Channels, films and series").foregroundStyle(LumenColors.textTertiary))
                 .font(font)
                 .foregroundStyle(LumenColors.textPrimary)
-                .textInputAutocapitalization(.never)
+                .noAutoCapitals()
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .focused($focused)
@@ -498,10 +523,13 @@ private struct PushedPage: ViewModifier {
     func body(content: Content) -> some View {
         content
             .preference(key: TopBarHiddenKey.self, value: !leaving)
+            #if os(iOS)
             .background(PageTransitionWatcher { leaving = $0 }.frame(width: 0, height: 0))
+            #endif
     }
 }
 
+#if os(iOS)
 /// A tiny UIKit view controller inside the page: UIKit tells it when its page starts to
 /// appear or disappear, including at the start of an interactive swipe back, which SwiftUI
 /// has no hook for.
@@ -590,3 +618,4 @@ private struct PageTransitionWatcher: UIViewControllerRepresentable {
         }
     }
 }
+#endif

@@ -14,9 +14,13 @@ struct LivePlayerView: View {
     @State private var vlcPiP: VLCPiP?
     @State private var chromeVisible = true
     @State private var hideTask: Task<Void, Never>?
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    /// Mac: the player sits in the window (`PlayerStage`), not in a cover iOS can dismiss.
+    @Environment(\.closePlayer) private var closePlayer
     @Environment(PlaylistStore.self) private var store
+    #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
     /// iPad: the channel list down the left (swipe in from the left edge, or the list button).
     @State private var listOpen = false
     /// How far the list has been dragged (in from the edge, or back out) while a finger is down.
@@ -25,7 +29,12 @@ struct LivePlayerView: View {
     @State private var nowPlaying: UUID?
 
     /// iPad only (Hayat 2026-11-02): an iPhone screen is too small to give a third of it to a list.
+    #if os(iOS)
     private var listAllowed: Bool { UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular && channels.count > 1 }
+    #else
+    /// Mac: the window is always big enough.
+    private var listAllowed: Bool { channels.count > 1 }
+    #endif
     private static let listWidth: CGFloat = 380
 
     init(channels: [LiveChannel], startIndex: Int) {
@@ -89,7 +98,19 @@ struct LivePlayerView: View {
             }
         )
         .simultaneousGesture(listGesture)
-        .statusBarHidden(!chromeVisible)
+        // Mac: the keyboard (↑ ↓ channels, Space pause, Esc close, F full screen) and the mouse.
+        .macPlayerKeys { key in
+            switch key {
+            case .up: zap(by: -1)
+            case .down: zap(by: 1)
+            case .space: model.togglePause(); showChromeBriefly()
+            case .escape: if listOpen { closeList() } else { dismiss() }
+            case .left, .right: return false
+            }
+            return true
+        }
+        .macMouseMoved { showChromeBriefly() }
+        .hideStatusBar(!chromeVisible)
         .persistentSystemOverlays(.hidden)
         .onAppear {
             model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
@@ -124,7 +145,7 @@ struct LivePlayerView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Channel list")
                         }
-                        if model.usesVLC, let vlcPiP {
+                        if model.usesVLC, let vlcPiP, !LumenPlatform.isMac || vlcPiP.isPossible {
                             Button { vlcPiP.toggle() } label: { PlayerIcon(systemImage: vlcPiP.isActive ? "pip.exit" : "pip.enter") }
                                 .buttonStyle(.plain)
                                 .opacity(vlcPiP.isPossible ? 1 : 0.4)
@@ -310,12 +331,21 @@ struct LivePlayerView: View {
         model.play(channel.streamUrl, debounce: false, is4K: channel.quality == "4K")
     }
 
+    private func dismiss() {
+        if let closePlayer { closePlayer() } else { systemDismiss() }
+    }
+
     private func zap(by step: Int) {
         guard channels.count > 1 else { return }
         Haptics.select()
         index = (index + step + channels.count) % channels.count
         model.play(channel.streamUrl, debounce: true, is4K: channel.quality == "4K")
         withAnimation(.easeOut(duration: 0.18)) { chromeVisible = true }
+        scheduleHide()
+    }
+
+    private func showChromeBriefly() {
+        if !chromeVisible { withAnimation(.easeOut(duration: 0.18)) { chromeVisible = true } }
         scheduleHide()
     }
 
@@ -364,8 +394,10 @@ final class LivePlayerModel {
     init(muted: Bool = false) {
         player.isMuted = muted
         // Sound plays even with the silent switch on, as in other video apps.
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
         observation = player.observe(\.timeControlStatus) { [weak self] player, _ in
             let playing = player.timeControlStatus == .playing
             Task { @MainActor in
@@ -504,6 +536,7 @@ final class LivePlayerModel {
     }
 }
 
+#if os(iOS)
 /// Apple's AirPlay button (pick a TV or speaker), white to match the overlay.
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
@@ -550,6 +583,8 @@ struct PlayerLayerView: UIViewRepresentable {
         view.playerLayer.player = player
     }
 }
+
+#endif
 
 /// iPad: the channels you're zapping through, down the left of the live player, with what's on
 /// now. The playing one is white (the TV's focus look). Tap one to watch it.

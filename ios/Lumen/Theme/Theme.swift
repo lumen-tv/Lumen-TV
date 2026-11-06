@@ -51,6 +51,7 @@ enum LumenFont {
 /// same colour at the same spot, or a hard line shows under the pill (Hayat's iPad, 2026-10-31).
 /// Each page's tint reaches the root through `AmbientTints`.
 struct AmbientBackground: View {
+    @Environment(\.screenSize) private var screenSize
     var tint: Color = LumenColors.ambientCool
     /// A film or series picture over the glows (`PageBackdrop`).
     var backdrop: String? = nil
@@ -63,7 +64,7 @@ struct AmbientBackground: View {
     var body: some View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
-            let screen = UIScreen.main.bounds.size
+            let screen = screenSize
             let w = max(frame.width, 1), h = max(frame.height, 1)
             // A point given as a fraction of the screen, turned into this view's unit space.
             let at = { (x: CGFloat, y: CGFloat) in
@@ -314,7 +315,7 @@ extension View {
     @ViewBuilder
     func hideTopScrollEdgeEffect() -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             self.scrollEdgeEffectHidden(true, for: .top)
         } else {
             self

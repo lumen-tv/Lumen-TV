@@ -1,6 +1,10 @@
 import ImageIO
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit // `UIImage` is NSImage on the Mac (Mac/MacShims.swift)
+#endif
 
 /// Posters and backdrops. SwiftUI's own `AsyncImage` keeps nothing in memory: a poster that
 /// scrolled out of a row and back was fetched and decoded again, at full size, on the main

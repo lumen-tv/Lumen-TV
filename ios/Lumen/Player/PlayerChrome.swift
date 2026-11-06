@@ -12,7 +12,7 @@ struct PlayerGlass<S: Shape>: ViewModifier {
 
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             content.glassEffect(.regular.tint(.black.opacity(0.3)).interactive(), in: shape)
         } else {
             fallback(content)
@@ -105,6 +105,7 @@ struct PlayerPill: View {
     }
 }
 
+#if os(iOS)
 /// The phone's own volume, as Apple's player shows it. iOS has no public call to set it; the
 /// accepted way is the slider inside an (invisible) `MPVolumeView`, which also keeps iOS's
 /// volume banner from covering the film while you drag.
@@ -171,6 +172,8 @@ struct HiddenVolumeView: UIViewRepresentable {
         if volume.slider == nil { volume.slider = SystemVolume.findSlider(in: uiView) }
     }
 }
+
+#endif
 
 /// Top right: a bar you drag for the volume, and the speaker.
 struct VolumeCapsule: View {

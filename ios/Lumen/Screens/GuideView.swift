@@ -49,10 +49,10 @@ struct GuideView: View {
             }
         }
         .ambientBackground(tint: tint)
-        .toolbar(.visible, for: .navigationBar)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navBar(.visible)
+        .clearNavBar()
         .navigationTitle(wide ? "TV guide" : "")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineTitle()
         .playerCover($playing)
         // iPhone: the guide takes the whole screen (back button to leave), so the details card
         // has the bottom to itself instead of sitting under the floating tab bar.
@@ -114,7 +114,7 @@ struct GuideView: View {
         }
         .toolbar {
             if wide {
-                ToolbarItem(placement: .topBarTrailing) { sourceMenu(current: current, favourites: favourites, loaded: loaded) }
+                ToolbarItem(placement: .lumenTrailing) { sourceMenu(current: current, favourites: favourites, loaded: loaded) }
             }
         }
     }

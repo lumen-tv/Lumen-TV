@@ -120,6 +120,7 @@ final class PageScroll {
 }
 
 struct PageBackdrop: View {
+    @Environment(\.screenSize) private var screenSize
     let url: String
     /// The page's scroll position: pulling down past the top stretches the picture, scrolling
     /// up moves it at a third of the speed (parallax), as on Apple's film pages.
@@ -129,7 +130,7 @@ struct PageBackdrop: View {
     var body: some View {
         GeometryReader { geo in
             let frame = geo.frame(in: .global)
-            let screen = UIScreen.main.bounds.size
+            let screen = screenSize
             let height = wide ? screen.height : min(screen.height * 0.62, screen.width * 1.15)
             // The picture goes in an overlay of a fixed-size frame: a scaledToFill image laid out
             // directly would make the whole page as wide as the picture (SwiftUI sizes a ZStack to
@@ -249,9 +250,9 @@ extension View {
                 scroll.y = y
             }
             .background(AmbientBackground(backdrop: backdrop, scroll: scroll))
-            .toolbar(.visible, for: .navigationBar)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .navigationBarTitleDisplayMode(.inline)
+            .navBar(.visible)
+            .clearNavBar()
+            .inlineTitle()
     }
 }
 
@@ -293,7 +294,7 @@ struct MovieDetailView: View {
         .detailPageChrome(backdrop: info?.backdropUrl ?? movie.posterUrl, scroll: scroll)
         .task { info = try? await store.movieInfo(movie, in: playlist) }
         .task { omdb = await Omdb.shared.ratings(title: movie.title, year: movie.year?.intValue, series: false) }
-        .fullScreenCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
+        .fullWindowCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
     }
 
     private var facts: String {
@@ -413,7 +414,7 @@ struct SeriesDetailView: View {
             let imdb = await Omdb.shared.ratings(title: series.title, year: series.year?.intValue, series: true)?.imdbId
             notes = await EpisodeNotes.shared.notes(title: series.title, year: series.year?.intValue, imdbId: imdb)
         }
-        .fullScreenCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
+        .fullWindowCover(item: $playback) { VodPlayerView(playback: $0, playlist: playlist) }
     }
 
     private var facts: String {
