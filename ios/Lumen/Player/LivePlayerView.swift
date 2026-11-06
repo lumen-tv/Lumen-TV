@@ -57,6 +57,15 @@ struct LivePlayerView: View {
                 .ignoresSafeArea()
                 .opacity(model.usesVLC ? 1 : 0)
 
+            #if os(macOS)
+            // Mac: a click shows or hides the buttons at once; a double click is full screen.
+            MacClickSurface(
+                click: { if listOpen { closeList() } else { toggleChrome() } },
+                doubleClick: { MacWindow.toggleFullScreen() }
+            )
+            .ignoresSafeArea()
+            #endif
+
             // Until the channel's picture appears: its colour, name and what's on (as the films'
             // loading screen). A hiccup later shows only the thin line along the bottom.
             if !model.hasPicture && model.error == nil {
@@ -86,10 +95,12 @@ struct LivePlayerView: View {
             if chromeVisible, !LumenPlatform.playerIsMini { chrome.transition(.opacity) }
             if listAllowed { channelList }
         }
+        #if os(iOS)
         .contentShape(Rectangle())
         .onTapGesture {
             if listOpen { closeList() } else { toggleChrome() }
         }
+        #endif
         .gesture(
             DragGesture(minimumDistance: 40).onEnded { drag in
                 guard !listOpen, listDrag == 0, abs(drag.translation.height) > abs(drag.translation.width) else { return }
@@ -111,6 +122,11 @@ struct LivePlayerView: View {
         }
         .macMouseMoved { showChromeBriefly() }
         #if os(macOS)
+        // Two fingers up and down is the volume. Sideways does nothing: live TV can't seek.
+        .macPlayerScroll(
+            blocked: { listOpen },
+            volume: { volume.set(volume.level + $0); showChromeBriefly() }
+        )
         .macPlayback(refresh: channels.count) {
             MacPlaybackActions(
                 isPlaying: { !model.paused },

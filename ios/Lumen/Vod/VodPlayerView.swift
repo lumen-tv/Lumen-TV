@@ -66,6 +66,18 @@ struct VodPlayerView: View {
             .ignoresSafeArea()
             .opacity(model.engine == .apple ? 1 : 0)
 
+            #if os(macOS)
+            // Mac: a click shows or hides the controls at once; a double click is full screen.
+            MacClickSurface(
+                click: { toggleControls() },
+                doubleClick: { MacWindow.toggleFullScreen() },
+                pinch: { amount in
+                    if amount > 0.08, !model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(true) } }
+                    if amount < -0.08, model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(false) } }
+                }
+            )
+            .ignoresSafeArea()
+            #else
             // Double-tap halves: back 10 s on the left, forward 10 s on the right; one tap toggles
             // the controls. (The double tap is declared first so a single tap waits for it.)
             HStack(spacing: 0) {
@@ -83,6 +95,7 @@ struct VodPlayerView: View {
                     if value.magnification < 0.92, model.fill { withAnimation(.easeOut(duration: 0.25)) { model.setFill(false) } }
                 }
             )
+            #endif
             if let tapJump {
                 JumpRipple(side: tapJump.side, seconds: tapJump.seconds)
                     .id(tapJump.at)
@@ -161,6 +174,13 @@ struct VodPlayerView: View {
         }
         .macMouseMoved { showControls() }
         #if os(macOS)
+        // Two fingers: sideways seeks (one jump when they lift), up and down is the volume.
+        .macPlayerScroll(
+            blocked: { panel != nil },
+            seek: { showSwipe($0) },
+            seekEnded: { finishSwipe($0) },
+            volume: { volume.set(volume.level + $0); showControls() }
+        )
         .macPlayback(refresh: queue.count) {
             MacPlaybackActions(
                 isPlaying: { model.isPlaying },
@@ -354,6 +374,33 @@ struct VodPlayerView: View {
         }
         updateNowPlaying()
     }
+
+    #if os(macOS)
+    /// Seconds for a two-finger swipe of that many points, in 5 s steps (a long swipe is minutes).
+    private func swipeSeconds(_ points: CGFloat) -> Int { Int((points * 0.5 / 5).rounded()) * 5 }
+
+    private func showSwipe(_ points: CGFloat) {
+        let seconds = swipeSeconds(points)
+        guard seconds != 0 else { tapJump = nil; return }
+        // The same date while the fingers are down, so the ripple's number changes in place.
+        withAnimation(.easeOut(duration: 0.15)) { tapJump = (seconds > 0 ? 1 : -1, abs(seconds), tapJump?.at ?? .now) }
+        showControls()
+    }
+
+    private func finishSwipe(_ points: CGFloat) {
+        let seconds = swipeSeconds(points)
+        guard seconds != 0 else { tapJump = nil; return }
+        model.skip(Int32(seconds))
+        showControls()
+        updateNowPlaying()
+        let at = tapJump?.at
+        Task {
+            try? await Task.sleep(for: .seconds(0.8))
+            guard tapJump?.at == at else { return }
+            withAnimation(.easeOut(duration: 0.3)) { tapJump = nil }
+        }
+    }
+    #endif
 
     private func showNowPlaying() {
         let token = NowPlaying.shared.begin(
